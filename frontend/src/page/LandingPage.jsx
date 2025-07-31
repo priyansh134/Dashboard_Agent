@@ -67,7 +67,7 @@ const LandingPages = () => {
   
   const navigate = useNavigate();
   const { login: userLogin, isAuthenticated } = useUser();
-  const url = "http://127.0.0.1:8080";
+  const url = "https://dashboard-agent-7.onrender.com";
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -105,7 +105,7 @@ const LandingPages = () => {
           user_data: response.data.user
         });
         
-        navigate('/chat');
+        navigate('/recommendations');
       }
     } catch (error) {
       console.error('Google login error:', error);
@@ -179,7 +179,7 @@ const LandingPages = () => {
         };
         
         userLogin(credentialResponse);
-        navigate('/chat');
+        navigate('/recommendations');
       }
     } catch (error) {
       const errorMessage = error.response?.data?.error || 
