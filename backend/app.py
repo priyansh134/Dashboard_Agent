@@ -762,6 +762,6 @@ Please provide a natural, conversational response that directly answers their qu
 # Main entry point for the application
 if __name__ == '__main__':
     # Run the Flask app on the specified port, defaulting to 8080
-    port = int(os.environ.get("PORT", 8080))  # Render requires 8080
-    app.run(host='0.0.0.0', port=port)
-    # app.run()
+    # port = int(os.environ.get("PORT", 8080))  # Render requires 8080
+    # app.run(host='0.0.0.0', port=port)
+    app.run()
