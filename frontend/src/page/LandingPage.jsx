@@ -499,7 +499,7 @@ const LandingPages = () => {
                       {/* Trust Indicators */}
                       <div className="flex items-center justify-center mt-6 text-gray-400 font-medium text-sm">
                         <CheckCircle className="w-4 h-4 mr-2 text-cyan-400" />
-                        <span>14-day free trial • No commitment required</span>
+                       
                       </div>
                     </div>
                   </motion.div>
