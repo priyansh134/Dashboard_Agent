@@ -35,13 +35,8 @@ export function Navbar({ isDarkMode, onToggleDarkMode, isConnectedToDatabase }) 
             >
               Analytics
             </button>
-            <button 
-              onClick={() => navigate('/chat')}
-              className="text-gray-500 hover:text-black transition-colors"
-            >
-              Dashboard
-            </button>
-            <a href="#" className="text-gray-500 hover:text-black transition-colors">Reports</a>
+            
+            
           </nav>
         </div>
         
@@ -53,18 +48,7 @@ export function Navbar({ isDarkMode, onToggleDarkMode, isConnectedToDatabase }) 
           </div>
           
           {/* Dark Mode Toggle */}
-          <button 
-            onClick={onToggleDarkMode}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-            title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          >
-            {isDarkMode ? (
-              <Sun className="h-5 w-5 text-gray-500" />
-            ) : (
-              <Moon className="h-5 w-5 text-gray-500" />
-            )}
-          </button>
-          
+         
           {/* Search Button */}
           <button className="p-2 hover:bg-gray-100 rounded-full transition-colors">
             <Search className="h-5 w-5 text-gray-500" />

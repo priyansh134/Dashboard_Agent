@@ -794,7 +794,7 @@ const ChatPage = () => {
         pdf.setTextColor(255, 255, 255);
         pdf.setFontSize(20);
         pdf.setFont(undefined, 'bold');
-        pdf.text('📊 Analytics Dashboard', pageWidth / 2, 20, { align: 'center' });
+        pdf.text('Analytics Dashboard', pageWidth / 2, 20, { align: 'center' });
         
         pdf.setFontSize(10);
         pdf.setFont(undefined, 'normal');
@@ -1679,15 +1679,7 @@ const ChatPage = () => {
                     Upload your data and start querying with natural language. 
                     Your results will appear here.
                   </p>
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                    <div className="flex items-center text-blue-700">
-                      <div className="w-2 h-2 bg-blue-500 rounded-full mr-3"></div>
-                      <p className="text-sm">
-                        💾 <strong>Session Persistence:</strong> Your chat history, charts, and dashboard are automatically saved! 
-                        They'll be here when you return (until you logout).
-                      </p>
-                    </div>
-                  </div>
+                 
                   <div className="bg-white/50 backdrop-blur-sm rounded-lg p-4 border border-white/20">
                     <p className="text-sm text-gray-500">
                       👈 Use the chat panel to get started
@@ -2472,13 +2464,8 @@ const ChatPage = () => {
                                         <strong>🎙️ Voice Mode:</strong> Click "Start Voice Chat" once and just speak naturally! 
                                         The AI will respond and automatically listen for your next question.
                                       </p>
-                                      <p className="mb-2">
-                                        <strong>🛑 Auto-Interrupt:</strong> Just start talking anytime to interrupt the AI - no buttons needed! 
-                                        The system instantly stops the AI and listens to your new question.
-                                      </p>
-                                      <p className="mb-2">
-                                        <strong>⌨️ Text Mode:</strong> Type questions like "What's the highest value?", "Explain the trend", or "What should I focus on?"
-                                      </p>
+                                     
+                                     
                                       <p className="text-xs text-blue-600">
                                         💡 Try: "Tell me about the data", "What patterns do you see?", "Which values are outliers?"
                                       </p>

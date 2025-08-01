@@ -8,6 +8,7 @@ import Skeleton from '../components/Skeleton';
 import { QueryInput } from "../components/QueryInput";
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import * as XLSX from 'xlsx';
 import { useUser } from '../context/UserContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -49,10 +50,13 @@ const ChatPage = () => {
   const [isListeningToChat, setIsListeningToChat] = useState({});
   const [isChatting, setIsChatting] = useState({});
   const [showChatInterface, setShowChatInterface] = useState({});
+  const [continuousMode, setContinuousMode] = useState({});
   const chartRefs = useRef({});
   const chartInstances = useRef({});
   const chatRecognition = useRef({});
-  const url = "http://127.0.0.1:8080";
+  const interruptRecognition = useRef({}); // For detecting interruptions during AI speech
+  const url="https://dashboard-agent-7.onrender.com"
+  // const url = "http://127.0.0.1:8080";
 
   // Show loading screen while checking authentication
   if (userLoading) {
@@ -68,6 +72,104 @@ const ChatPage = () => {
       </div>
     );
   }
+
+  // Load conversation history from localStorage on component mount
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      const userKey = user.email || user.id || user.sub || 'default';
+      const savedHistory = localStorage.getItem(`dashboardAgent_chatHistory_${userKey}`);
+      const savedChartCustomization = localStorage.getItem(`dashboardAgent_chartCustomization_${userKey}`);
+      const savedPinnedCharts = localStorage.getItem(`dashboardAgent_pinnedCharts_${userKey}`);
+      
+      if (savedHistory) {
+        try {
+          const parsedHistory = JSON.parse(savedHistory);
+          // Convert timestamp strings back to Date objects
+          const restoredHistory = parsedHistory.map(conv => ({
+            ...conv,
+            timestamp: new Date(conv.timestamp)
+          }));
+          setConversationHistory(restoredHistory);
+          console.log('📂 Restored conversation history:', restoredHistory.length, 'conversations');
+          
+          if (restoredHistory.length > 0) {
+            showNotification(`📂 Restored ${restoredHistory.length} previous conversations from your session!`, 'success');
+          }
+        } catch (error) {
+          console.error('Error parsing saved history:', error);
+        }
+      }
+      
+      if (savedChartCustomization) {
+        try {
+          setChartCustomization(JSON.parse(savedChartCustomization));
+          console.log('📂 Restored chart customizations');
+        } catch (error) {
+          console.error('Error parsing saved chart customization:', error);
+        }
+      }
+      
+      if (savedPinnedCharts) {
+        try {
+          const parsedPinned = JSON.parse(savedPinnedCharts);
+          // Convert timestamp strings back to Date objects
+          const restoredPinned = parsedPinned.map(chart => ({
+            ...chart,
+            timestamp: new Date(chart.timestamp)
+          }));
+          setPinnedCharts(restoredPinned);
+          console.log('📂 Restored pinned charts:', restoredPinned.length, 'charts');
+          
+          if (restoredPinned.length > 0) {
+            setTimeout(() => {
+              showNotification(`📌 Restored ${restoredPinned.length} pinned charts to your dashboard!`, 'success');
+            }, 1500); // Show after conversation history notification
+          }
+        } catch (error) {
+          console.error('Error parsing saved pinned charts:', error);
+        }
+      }
+    }
+  }, [isAuthenticated, user]);
+
+  // Save conversation history to localStorage whenever it changes
+  useEffect(() => {
+    if (isAuthenticated && user && conversationHistory.length > 0) {
+      try {
+        const userKey = user.email || user.id || user.sub || 'default';
+        localStorage.setItem(`dashboardAgent_chatHistory_${userKey}`, JSON.stringify(conversationHistory));
+        console.log('💾 Saved conversation history to localStorage');
+      } catch (error) {
+        console.error('Error saving conversation history:', error);
+      }
+    }
+  }, [conversationHistory, isAuthenticated, user]);
+
+  // Save chart customization to localStorage whenever it changes
+  useEffect(() => {
+    if (isAuthenticated && user && Object.keys(chartCustomization).length > 0) {
+      try {
+        const userKey = user.email || user.id || user.sub || 'default';
+        localStorage.setItem(`dashboardAgent_chartCustomization_${userKey}`, JSON.stringify(chartCustomization));
+        console.log('💾 Saved chart customizations to localStorage');
+      } catch (error) {
+        console.error('Error saving chart customization:', error);
+      }
+    }
+  }, [chartCustomization, isAuthenticated, user]);
+
+  // Save pinned charts to localStorage whenever it changes
+  useEffect(() => {
+    if (isAuthenticated && user && pinnedCharts.length > 0) {
+      try {
+        const userKey = user.email || user.id || user.sub || 'default';
+        localStorage.setItem(`dashboardAgent_pinnedCharts_${userKey}`, JSON.stringify(pinnedCharts));
+        console.log('💾 Saved pinned charts to localStorage');
+      } catch (error) {
+        console.error('Error saving pinned charts:', error);
+      }
+    }
+  }, [pinnedCharts, isAuthenticated, user]);
 
   // Redirect if not authenticated (backup check)
   if (!isAuthenticated) {
@@ -518,15 +620,62 @@ const ChatPage = () => {
     }
   }, []);
 
-  // Cleanup speech synthesis on component unmount
+  // Initialize speech synthesis and cleanup
   useEffect(() => {
+    // Initialize speech synthesis voices
+    if (window.speechSynthesis) {
+      // Trigger voice loading
+      const voices = window.speechSynthesis.getVoices();
+      console.log('🔊 Initial voices loaded:', voices.length);
+      
+      if (voices.length === 0) {
+        // Wait for voices to load
+        const handleVoicesChanged = () => {
+          console.log('🔊 Voices loaded on init:', window.speechSynthesis.getVoices().length);
+          window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
+        };
+        window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
+      }
+    }
+
     return () => {
       // Stop any ongoing speech when component unmounts
       if (window.speechSynthesis) {
         window.speechSynthesis.cancel();
       }
+      
+      // Stop all interrupt detection instances
+      Object.keys(interruptRecognition.current).forEach(conversationId => {
+        stopInterruptDetection(conversationId);
+      });
     };
   }, []);
+
+  // Test speech function
+  const testSpeech = () => {
+    const testText = "Hello! This is a test of the text to speech functionality. If you can hear this, the speech system is working correctly.";
+    
+    if (!window.speechSynthesis) {
+      showNotification('❌ Text-to-speech not supported in your browser', 'info');
+      return;
+    }
+
+    showNotification('🔊 Testing speech...', 'info');
+    
+    const utterance = new SpeechSynthesisUtterance(testText);
+    utterance.rate = 0.9;
+    utterance.volume = 1.0;
+    
+    utterance.onend = () => {
+      showNotification('✅ Speech test completed!', 'success');
+    };
+    
+    utterance.onerror = (e) => {
+      showNotification(`❌ Speech test failed: ${e.error}`, 'info');
+    };
+    
+    window.speechSynthesis.speak(utterance);
+  };
 
   const toggleVoiceRecognition = () => {
     if (!recognition) {
@@ -819,6 +968,223 @@ const ChatPage = () => {
     }
   };
 
+  const downloadDashboardExcel = async () => {
+    if (pinnedCharts.length === 0) {
+      showNotification('No charts pinned to download!', 'info');
+      return;
+    }
+
+    setIsGeneratingPDF(true); // Reusing the same loading state
+    showNotification('📊 Generating Excel dashboard with dynamic charts...', 'info');
+
+    try {
+      // Create a new workbook
+      const workbook = XLSX.utils.book_new();
+
+      // 1. Dashboard Summary Sheet
+      const summaryData = [
+        ['📊 Analytics Dashboard Summary'],
+        ['Generated on:', new Date().toLocaleDateString()],
+        ['Generated at:', new Date().toLocaleTimeString()],
+        ['Total Charts:', pinnedCharts.length],
+        [''],
+        ['Chart #', 'Query', 'Chart Type', 'X-Axis', 'Y-Axis', 'Data Points', 'Sheet Name']
+      ];
+
+      pinnedCharts.forEach((chart, index) => {
+        const xAxisField = chart.data[0] ? Object.keys(chart.data[0])[chart.customization.xAxis] : 'N/A';
+        const yAxisField = chart.data[0] ? Object.keys(chart.data[0])[chart.customization.yAxis] : 'N/A';
+        
+        summaryData.push([
+          index + 1,
+          chart.query,
+          chart.customization.chartType.charAt(0).toUpperCase() + chart.customization.chartType.slice(1),
+          xAxisField,
+          yAxisField,
+          chart.data.length,
+          `Chart_${index + 1}_Data`
+        ]);
+      });
+
+      const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
+      
+      // Style the summary sheet
+      summarySheet['!cols'] = [
+        { width: 12 }, { width: 50 }, { width: 15 }, { width: 20 }, { width: 20 }, { width: 15 }, { width: 20 }
+      ];
+      
+      XLSX.utils.book_append_sheet(workbook, summarySheet, 'Dashboard Summary');
+
+      // 2. Combined Original Data Sheet
+      if (pinnedCharts.length > 0) {
+        const combinedData = [
+          ['📈 All Chart Data Combined'],
+          ['Chart Source', 'Query Used', ...Object.keys(pinnedCharts[0].data[0] || {})]
+        ];
+
+        pinnedCharts.forEach((chart, chartIndex) => {
+          if (chart.data && chart.data.length > 0) {
+            chart.data.forEach((row, rowIndex) => {
+              const chartLabel = `Chart ${chartIndex + 1}`;
+              const query = rowIndex === 0 ? chart.query : ''; // Only show query on first row of each chart
+              combinedData.push([chartLabel, query, ...Object.values(row)]);
+            });
+            // Add empty row between charts
+            combinedData.push(['', '', ...Array(Object.keys(chart.data[0] || {}).length).fill('')]);
+          }
+        });
+
+        const combinedSheet = XLSX.utils.aoa_to_sheet(combinedData);
+        combinedSheet['!cols'] = [{ width: 15 }, { width: 50 }, ...Array(Object.keys(pinnedCharts[0].data[0] || {}).length).fill({ width: 15 })];
+        XLSX.utils.book_append_sheet(workbook, combinedSheet, 'All Original Data');
+      }
+
+      // 3. Individual Chart Data Sheets with Dynamic Features
+      pinnedCharts.forEach((chart, index) => {
+        if (chart.data && chart.data.length > 0) {
+          const headers = Object.keys(chart.data[0]);
+          const xAxisField = headers[chart.customization.xAxis];
+          const yAxisField = headers[chart.customization.yAxis];
+
+          // Create chart data with metadata
+          const chartSheetData = [
+            [`📊 Chart ${index + 1} - ${chart.customization.chartType.charAt(0).toUpperCase() + chart.customization.chartType.slice(1)} Chart`],
+            ['Query:', chart.query],
+            ['X-Axis:', xAxisField],
+            ['Y-Axis:', yAxisField],
+            ['Generated:', chart.timestamp.toLocaleString()],
+            [''],
+            ['🔧 Dynamic Analysis Section'],
+            ['You can modify the formulas below to create custom calculations:'],
+            [''],
+            ['Custom Analysis:', '=AVERAGE(' + yAxisField + '2:' + yAxisField + (chart.data.length + 11) + ')', '', 'Average of ' + yAxisField],
+            ['Total Count:', '=COUNTA(' + xAxisField + '2:' + xAxisField + (chart.data.length + 11) + ')', '', 'Count of records'],
+            ['Max Value:', '=MAX(' + yAxisField + '2:' + yAxisField + (chart.data.length + 11) + ')', '', 'Maximum ' + yAxisField],
+            ['Min Value:', '=MIN(' + yAxisField + '2:' + yAxisField + (chart.data.length + 11) + ')', '', 'Minimum ' + yAxisField],
+            [''],
+            ['📊 Original Data (You can create pivot tables and charts from this data):'],
+            headers // Column headers
+          ];
+
+          // Add data rows
+          chart.data.forEach(row => {
+            chartSheetData.push(Object.values(row));
+          });
+
+          // Add some extra analysis rows
+          chartSheetData.push(['']);
+          chartSheetData.push(['📋 Quick Instructions for Dynamic Charts:']);
+          chartSheetData.push(['1. Select the data range (A16:' + String.fromCharCode(65 + headers.length - 1) + (16 + chart.data.length - 1) + ')']);
+          chartSheetData.push(['2. Go to Insert > Charts to create interactive charts']);
+          chartSheetData.push(['3. Use Insert > PivotTable for dynamic data analysis']);
+          chartSheetData.push(['4. Modify the formulas above (rows 10-13) for custom calculations']);
+
+          const chartSheet = XLSX.utils.aoa_to_sheet(chartSheetData);
+          
+          // Set column widths
+          chartSheet['!cols'] = [
+            { width: 20 }, { width: 20 }, { width: 15 }, { width: 30 }
+          ];
+
+          // Add the sheet
+          XLSX.utils.book_append_sheet(workbook, chartSheet, `Chart_${index + 1}_Data`);
+        }
+      });
+
+      // 4. Chart Configurations Sheet
+      const configData = [
+        ['📋 Chart Configurations'],
+        ['This sheet contains technical details about each chart for reference'],
+        [''],
+        ['Chart #', 'Conversation ID', 'Chart Type', 'X-Axis Index', 'Y-Axis Index', 'X-Axis Field', 'Y-Axis Field', 'Timestamp']
+      ];
+
+      pinnedCharts.forEach((chart, index) => {
+        const headers = chart.data[0] ? Object.keys(chart.data[0]) : [];
+        const xAxisField = headers[chart.customization.xAxis] || 'N/A';
+        const yAxisField = headers[chart.customization.yAxis] || 'N/A';
+
+        configData.push([
+          index + 1,
+          chart.id,
+          chart.customization.chartType,
+          chart.customization.xAxis,
+          chart.customization.yAxis,
+          xAxisField,
+          yAxisField,
+          chart.timestamp.toLocaleString()
+        ]);
+      });
+
+      const configSheet = XLSX.utils.aoa_to_sheet(configData);
+      configSheet['!cols'] = [
+        { width: 10 }, { width: 20 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 20 }, { width: 20 }, { width: 20 }
+      ];
+      XLSX.utils.book_append_sheet(workbook, configSheet, 'Chart Configurations');
+
+      // 5. Instructions Sheet for Dynamic Features
+      const instructionsData = [
+        ['🚀 Excel Dashboard - Dynamic Features Guide'],
+        [''],
+        ['Welcome to your interactive Excel dashboard! Here\'s how to make the most of it:'],
+        [''],
+        ['📊 CREATING DYNAMIC CHARTS:'],
+        ['1. Go to any "Chart_X_Data" sheet'],
+        ['2. Select the data range starting from row 16 (original data section)'],
+        ['3. Insert > Charts > Choose your preferred chart type'],
+        ['4. Your chart will automatically update when you modify the data'],
+        [''],
+        ['📈 PIVOT TABLES FOR ADVANCED ANALYSIS:'],
+        ['1. Select the data range in any chart sheet'],
+        ['2. Insert > PivotTable'],
+        ['3. Drag and drop fields to analyze data dynamically'],
+        ['4. Create slicers for interactive filtering'],
+        [''],
+        ['🔧 CUSTOM CALCULATIONS:'],
+        ['1. Each chart sheet has pre-built formulas (rows 10-13)'],
+        ['2. Modify these formulas or create your own'],
+        ['3. Use Excel functions like SUMIF, COUNTIF, VLOOKUP for advanced analysis'],
+        [''],
+        ['📋 DATA SOURCES:'],
+        ['• "All Original Data" - Combined data from all charts'],
+        ['• "Chart_X_Data" - Individual chart data with analysis tools'],
+        ['• "Chart Configurations" - Technical metadata'],
+        [''],
+        ['💡 PRO TIPS:'],
+        ['• Format data as Table (Ctrl+T) for better chart updates'],
+        ['• Use conditional formatting to highlight trends'],
+        ['• Create dashboard sheets linking to multiple chart sheets'],
+        ['• Set up data validation for interactive dropdowns'],
+        [''],
+        ['🔄 MAKING CHARTS TRULY DYNAMIC:'],
+        ['1. Convert data to Excel Tables (Ctrl+T)'],
+        ['2. Use dynamic named ranges with OFFSET/COUNTA functions'],
+        ['3. Create dropdown menus with data validation'],
+        ['4. Use INDEX/MATCH for dynamic data lookup'],
+        ['5. Set up automatic chart updates with table references'],
+        [''],
+        ['Need help? Each chart sheet has specific instructions at the bottom!']
+      ];
+
+      const instructionsSheet = XLSX.utils.aoa_to_sheet(instructionsData);
+      instructionsSheet['!cols'] = [{ width: 80 }];
+      XLSX.utils.book_append_sheet(workbook, instructionsSheet, 'Instructions');
+
+      // Generate and download the Excel file
+      const fileName = `analytics-dashboard-${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+
+      console.log(`📊 Excel dashboard generated successfully: ${fileName}`);
+      showNotification(`✅ Excel dashboard downloaded! ${pinnedCharts.length} charts with dynamic features included.`, 'success');
+
+    } catch (error) {
+      console.error('Error generating Excel dashboard:', error);
+      showNotification('❌ Error generating Excel dashboard. Please try again.', 'error');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
   // AI Analysis Functions
   const analyzeData = async (conversationId, data, query) => {
     setAnalyzingData(prev => ({ ...prev, [conversationId]: true }));
@@ -917,49 +1283,336 @@ const ChatPage = () => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       const recognitionInstance = new SpeechRecognition();
-      recognitionInstance.continuous = false;
-      recognitionInstance.interimResults = false;
+      
+      // Configure for continuous conversation
+      recognitionInstance.continuous = true; // Keep listening for longer phrases
+      recognitionInstance.interimResults = true; // Get partial results
       recognitionInstance.lang = 'en-US';
+      recognitionInstance.maxAlternatives = 1;
 
       recognitionInstance.onstart = () => {
         setIsListeningToChat(prev => ({ ...prev, [conversationId]: true }));
+        console.log('🎙️ Voice recognition started for conversation:', conversationId);
       };
 
       recognitionInstance.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        setChatInput(prev => ({ ...prev, [conversationId]: transcript }));
-        // Auto-send the voice input
-        setTimeout(() => sendChatMessage(conversationId, transcript), 500);
+        let finalTranscript = '';
+        let interimTranscript = '';
+        
+        // Process all results
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          if (result.isFinal) {
+            finalTranscript += result[0].transcript;
+          } else {
+            interimTranscript += result[0].transcript;
+          }
+        }
+        
+        // Update input with interim results for better UX
+        if (interimTranscript) {
+          setChatInput(prev => ({ ...prev, [conversationId]: interimTranscript }));
+        }
+        
+        // Send message when we have a final result
+        if (finalTranscript.trim()) {
+          console.log('🎙️ Final transcript:', finalTranscript);
+          setChatInput(prev => ({ ...prev, [conversationId]: finalTranscript }));
+          
+          // Stop listening and send the message
+          recognitionInstance.stop();
+          
+          // Auto-send the voice input
+          setTimeout(() => {
+            sendChatMessage(conversationId, finalTranscript.trim());
+          }, 200);
+        }
       };
 
       recognitionInstance.onend = () => {
+        console.log('🎙️ Voice recognition ended for conversation:', conversationId);
         setIsListeningToChat(prev => ({ ...prev, [conversationId]: false }));
+        
+        // Auto-restart if we're still in continuous mode and not processing a chat
+        if (continuousMode[conversationId] && !isChatting[conversationId] && !isSpeaking[conversationId + '_chat']) {
+          console.log('🔄 Auto-restarting voice recognition (continuous mode)');
+          setTimeout(() => {
+            if (continuousMode[conversationId] && !isChatting[conversationId]) {
+              startVoiceListening(conversationId);
+            }
+          }, 1000);
+        }
       };
 
       recognitionInstance.onerror = (event) => {
-        console.error('Chat speech recognition error:', event.error);
+        console.error('🎙️ Speech recognition error:', event.error);
         setIsListeningToChat(prev => ({ ...prev, [conversationId]: false }));
+        
+        // Handle different types of errors with smart retry
+        const recoverableErrors = ['network', 'audio-capture', 'no-speech', 'aborted'];
+        const shouldRetry = continuousMode[conversationId] && 
+                           recoverableErrors.includes(event.error);
+        
+        if (shouldRetry && !isChatting[conversationId]) {
+          console.log('🔄 Retrying voice recognition after error:', event.error);
+          setTimeout(() => {
+            if (continuousMode[conversationId] && !isChatting[conversationId]) {
+              startVoiceListening(conversationId);
+            }
+          }, 1000);
+        } else if (event.error === 'not-allowed') {
+          showNotification('❌ Microphone access denied. Please allow microphone access.', 'info');
+          setContinuousMode(prev => ({ ...prev, [conversationId]: false }));
+        } else if (event.error === 'network') {
+          showNotification('❌ Network error in speech recognition. Check your connection.', 'info');
+        }
       };
 
       chatRecognition.current[conversationId] = recognitionInstance;
     }
   };
 
-  const toggleChatVoiceInput = (conversationId) => {
+  const startVoiceListening = (conversationId) => {
     if (!chatRecognition.current[conversationId]) {
       initializeChatRecognition(conversationId);
     }
 
     const recognition = chatRecognition.current[conversationId];
     if (!recognition) {
-      showNotification('❌ Speech recognition not supported', 'info');
+      showNotification('❌ Speech recognition not supported in your browser', 'info');
       return;
     }
 
-    if (isListeningToChat[conversationId]) {
-      recognition.stop();
-    } else {
+    try {
       recognition.start();
+      console.log('🎙️ Started voice listening for conversation:', conversationId);
+      
+      // Set a timeout to restart if it gets stuck
+      const timeoutKey = `${conversationId}_timeout`;
+      if (window[timeoutKey]) {
+        clearTimeout(window[timeoutKey]);
+      }
+      
+      window[timeoutKey] = setTimeout(() => {
+        console.log('🔄 Voice recognition timeout, restarting...');
+        if (continuousMode[conversationId] && !isChatting[conversationId] && !isSpeaking[conversationId + '_chat']) {
+          stopVoiceListening(conversationId);
+          setTimeout(() => {
+            startVoiceListening(conversationId);
+          }, 500);
+        }
+      }, 10000); // Restart after 10 seconds if no activity
+      
+    } catch (error) {
+      console.error('Error starting voice recognition:', error);
+      setTimeout(() => {
+        if (continuousMode[conversationId]) {
+          startVoiceListening(conversationId);
+        }
+      }, 1000);
+    }
+  };
+
+  const stopVoiceListening = (conversationId) => {
+    const recognition = chatRecognition.current[conversationId];
+    if (recognition) {
+      recognition.stop();
+    }
+    setIsListeningToChat(prev => ({ ...prev, [conversationId]: false }));
+    
+    // Clear timeout
+    const timeoutKey = `${conversationId}_timeout`;
+    if (window[timeoutKey]) {
+      clearTimeout(window[timeoutKey]);
+      delete window[timeoutKey];
+    }
+  };
+
+  // Setup aggressive interrupt detection while AI is speaking
+  const setupInterruptDetection = (conversationId) => {
+    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+      return;
+    }
+
+    console.log('🎙️ Setting up aggressive interrupt detection for conversation:', conversationId);
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const interruptInstance = new SpeechRecognition();
+    
+    // Configure for ultra-fast detection
+    interruptInstance.continuous = true;
+    interruptInstance.interimResults = true;
+    interruptInstance.lang = 'en-US';
+
+    interruptInstance.onstart = () => {
+      console.log('🎙️ Interrupt detection ACTIVE - speak to interrupt');
+    };
+
+    interruptInstance.onresult = (event) => {
+      // Make interruption much more aggressive
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const transcript = result[0].transcript.trim();
+        const confidence = result[0].confidence;
+        
+        console.log(`🎙️ Detected speech: "${transcript}" (confidence: ${confidence}, final: ${result.isFinal})`);
+        
+                 // Trigger interrupt on ANY detectible speech
+         if (transcript.length > 0) {
+           // Very low threshold for immediate response
+           if (confidence > 0.3 || (transcript.length > 1 && confidence > 0.2)) {
+             console.log('🛑 INTERRUPTING AI NOW! User said:', transcript);
+             interruptAI(conversationId, transcript);
+             return; // Exit immediately
+           }
+         }
+      }
+    };
+
+    interruptInstance.onerror = (event) => {
+      console.log('🎙️ Interrupt detection error:', event.error);
+      // Restart interrupt detection if it fails (unless manually stopped)
+      if (event.error !== 'aborted' && continuousMode[conversationId] && isSpeaking[conversationId + '_chat']) {
+        setTimeout(() => {
+          console.log('🔄 Restarting interrupt detection after error');
+          setupInterruptDetection(conversationId);
+        }, 500);
+      }
+    };
+
+    interruptInstance.onend = () => {
+      console.log('🎙️ Interrupt detection ended');
+      // Restart if AI is still speaking and we're in continuous mode
+      if (continuousMode[conversationId] && isSpeaking[conversationId + '_chat']) {
+        setTimeout(() => {
+          console.log('🔄 Restarting interrupt detection (ended unexpectedly)');
+          setupInterruptDetection(conversationId);
+        }, 300);
+      }
+    };
+
+    interruptRecognition.current[conversationId] = interruptInstance;
+
+    try {
+      interruptInstance.start();
+      console.log('🎙️ Interrupt detection started successfully');
+    } catch (error) {
+      console.error('🎙️ Failed to start interrupt detection:', error);
+      // Retry once
+      setTimeout(() => {
+        try {
+          interruptInstance.start();
+        } catch (retryError) {
+          console.error('🎙️ Retry failed:', retryError);
+        }
+      }, 1000);
+    }
+  };
+
+  // Stop interrupt detection
+  const stopInterruptDetection = (conversationId) => {
+    const interruptInstance = interruptRecognition.current[conversationId];
+    if (interruptInstance) {
+      try {
+        interruptInstance.stop();
+        console.log('🎙️ Stopped interrupt detection');
+      } catch (error) {
+        console.log('🎙️ Error stopping interrupt detection:', error);
+      }
+      delete interruptRecognition.current[conversationId];
+    }
+  };
+
+  const interruptAI = (conversationId, userTranscript = null) => {
+    console.log('🛑 Interrupting AI for conversation:', conversationId, 'User said:', userTranscript);
+    
+    // Stop interrupt detection immediately
+    stopInterruptDetection(conversationId);
+    
+    // Stop any ongoing speech immediately
+    window.speechSynthesis.cancel();
+    setIsSpeaking(prev => ({ ...prev, [conversationId + '_chat']: false }));
+    
+    // Stop current voice recognition
+    stopVoiceListening(conversationId);
+    
+    if (userTranscript && userTranscript.trim().length > 2) {
+      // User already said something while interrupting, process it directly
+      console.log('🔄 Processing interrupt message:', userTranscript);
+      setChatInput(prev => ({ ...prev, [conversationId]: userTranscript }));
+      
+      setTimeout(() => {
+        sendChatMessage(conversationId, userTranscript.trim());
+        showNotification('🛑 Interrupted! Processing your question...', 'success');
+      }, 100);
+    } else {
+      // Start listening for the user's question immediately
+      setTimeout(() => {
+        if (continuousMode[conversationId]) {
+          console.log('🔄 Starting voice listening after interrupt');
+          startVoiceListening(conversationId);
+          showNotification('🎙️ Go ahead, I\'m listening...', 'success');
+        }
+      }, 200);
+    }
+  };
+
+  // Monitor and ensure conversation keeps going
+  const ensureContinuousConversation = (conversationId) => {
+    if (!continuousMode[conversationId]) return;
+    
+    // Check if we should be listening but aren't
+    const shouldBeListening = !isChatting[conversationId] && !isSpeaking[conversationId + '_chat'];
+    const isCurrentlyListening = isListeningToChat[conversationId];
+    
+    if (shouldBeListening && !isCurrentlyListening) {
+      console.log('🔄 Conversation got stuck, restarting listening...');
+      startVoiceListening(conversationId);
+    }
+  };
+
+  const toggleContinuousMode = (conversationId) => {
+    const newContinuousMode = !continuousMode[conversationId];
+    
+    setContinuousMode(prev => ({ 
+      ...prev, 
+      [conversationId]: newContinuousMode 
+    }));
+
+    if (newContinuousMode) {
+      // Start continuous mode
+      showNotification('🎙️ Continuous voice mode activated! Just speak naturally - you can interrupt anytime by talking!', 'success');
+      // Wait a moment then start listening
+      setTimeout(() => {
+        startVoiceListening(conversationId);
+        
+        // Set up monitoring to ensure conversation keeps going
+        const monitorInterval = setInterval(() => {
+          ensureContinuousConversation(conversationId);
+        }, 3000); // Check every 3 seconds
+        
+        // Store interval for cleanup
+        const cleanupKey = `${conversationId}_monitor`;
+        if (window[cleanupKey]) {
+          clearInterval(window[cleanupKey]);
+        }
+        window[cleanupKey] = monitorInterval;
+        
+      }, 500);
+    } else {
+      // Stop continuous mode
+      showNotification('🎙️ Continuous voice mode deactivated.', 'info');
+      stopVoiceListening(conversationId);
+      stopInterruptDetection(conversationId); // Stop interrupt detection
+      window.speechSynthesis.cancel(); // Stop any ongoing speech
+      setIsSpeaking(prev => ({ ...prev, [conversationId + '_chat']: false }));
+      
+      // Clear monitoring
+      const cleanupKey = `${conversationId}_monitor`;
+      if (window[cleanupKey]) {
+        clearInterval(window[cleanupKey]);
+        delete window[cleanupKey];
+      }
     }
   };
 
@@ -1008,10 +1661,22 @@ const ChatPage = () => {
           [conversationId]: [...(prev[conversationId] || []), newChatMessage, aiResponse]
         }));
 
-        // Auto-speak the response
+        // Auto-speak the response and handle continuous mode
         setTimeout(() => {
-          speakChatResponse(conversationId, response.data.answer);
-        }, 300);
+          speakChatResponse(conversationId, response.data.answer, () => {
+            // Callback when speech finishes - immediately restart listening
+            console.log('🔄 AI finished speaking, restarting listening for continuous conversation...');
+            if (continuousMode[conversationId]) {
+              setTimeout(() => {
+                if (continuousMode[conversationId] && !isChatting[conversationId]) {
+                  console.log('🔄 Restarting voice listening after AI response');
+                  startVoiceListening(conversationId);
+                  showNotification('🎙️ Ready for your next question...', 'info');
+                }
+              }, 400); // Shorter delay for better responsiveness
+            }
+          });
+        }, 50); // Start speech almost immediately
 
         showNotification('🤖 AI responded!', 'success');
       } else {
@@ -1025,40 +1690,145 @@ const ChatPage = () => {
     }
   };
 
-  const speakChatResponse = (conversationId, text) => {
-    // Stop any current speech
-    window.speechSynthesis.cancel();
+  const speakChatResponse = (conversationId, text, onEndCallback = null) => {
+    console.log('🔊 Starting speech synthesis for:', text.substring(0, 50) + '...');
 
     if (!window.speechSynthesis) {
+      console.error('❌ Text-to-speech not supported in this browser');
+      showNotification('❌ Text-to-speech not supported in your browser', 'info');
+      if (onEndCallback) onEndCallback();
       return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.9;
-    utterance.pitch = 1.1;
-    utterance.volume = 0.8;
+    // Stop any current speech first
+    window.speechSynthesis.cancel();
 
-    // Find a good voice
+    // Function to ensure voices are loaded and speak
+    const speakWithVoices = () => {
+      try {
+        const utterance = new SpeechSynthesisUtterance(text);
+        
+        // Configure speech settings for better clarity
+        utterance.rate = 0.85;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+        utterance.lang = 'en-US';
+
+        // Get available voices
+        const voices = window.speechSynthesis.getVoices();
+        console.log('🔊 Available voices:', voices.length);
+        
+        if (voices.length > 0) {
+          // Try to find the best voice
+          const preferredVoice = 
+            voices.find(voice => voice.name.includes('Google US English')) ||
+            voices.find(voice => voice.name.includes('Microsoft Zira')) ||
+            voices.find(voice => voice.lang === 'en-US' && voice.localService) ||
+            voices.find(voice => voice.lang.startsWith('en-US')) ||
+            voices.find(voice => voice.lang.startsWith('en')) ||
+            voices[0];
+
+          if (preferredVoice) {
+            utterance.voice = preferredVoice;
+            console.log('🔊 Using voice:', preferredVoice.name, '- Local:', preferredVoice.localService);
+          }
+        }
+
+        // Set up event handlers
+        utterance.onstart = () => {
+          console.log('🔊 Speech started successfully');
+          setIsSpeaking(prev => ({ ...prev, [conversationId + '_chat']: true }));
+          
+          // Start interrupt detection immediately when AI begins speaking
+          if (continuousMode[conversationId]) {
+            setTimeout(() => {
+              setupInterruptDetection(conversationId);
+            }, 100); // Very short delay to avoid setup conflicts
+          }
+        };
+
+        utterance.onend = () => {
+          console.log('🔊 Speech finished naturally');
+          setIsSpeaking(prev => ({ ...prev, [conversationId + '_chat']: false }));
+          
+          // Stop interrupt detection since speech ended naturally
+          stopInterruptDetection(conversationId);
+          
+          if (onEndCallback) {
+            // Wait a bit before restarting listening
+            setTimeout(onEndCallback, 600);
+          }
+        };
+
+        utterance.onerror = (event) => {
+          console.error('🔊 Speech error:', event.error);
+          setIsSpeaking(prev => ({ ...prev, [conversationId + '_chat']: false }));
+          
+          // Stop interrupt detection on error
+          stopInterruptDetection(conversationId);
+          
+          showNotification(`Speech error: ${event.error}`, 'info');
+          if (onEndCallback) onEndCallback();
+        };
+
+        utterance.onpause = () => {
+          console.log('🔊 Speech paused');
+        };
+
+        utterance.onresume = () => {
+          console.log('🔊 Speech resumed');
+        };
+
+        // Start speaking
+        window.speechSynthesis.speak(utterance);
+        console.log('🔊 Speech command sent to browser');
+
+        // Verify that speaking started (fallback check)
+        setTimeout(() => {
+          if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending) {
+            console.warn('🔊 Speech may not have started, trying alternative approach');
+            // Try again with a different approach
+            window.speechSynthesis.cancel();
+            setTimeout(() => {
+              window.speechSynthesis.speak(utterance);
+            }, 100);
+          }
+        }, 200);
+
+      } catch (error) {
+        console.error('🔊 Error creating speech utterance:', error);
+        if (onEndCallback) onEndCallback();
+      }
+    };
+
+    // Ensure voices are loaded
     const voices = window.speechSynthesis.getVoices();
-    const preferredVoice = voices.find(voice => 
-      voice.lang.startsWith('en') && voice.name.includes('Google')
-    ) || voices.find(voice => 
-      voice.lang.startsWith('en')
-    ) || voices[0];
-
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
+    if (voices.length === 0) {
+      console.log('🔊 Waiting for voices to load...');
+      
+      // Set up voice loading handler
+      const handleVoicesChanged = () => {
+        console.log('🔊 Voices loaded:', window.speechSynthesis.getVoices().length);
+        speakWithVoices();
+        window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
+      };
+      
+      window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
+      
+      // Fallback timeout
+      setTimeout(() => {
+        if (window.speechSynthesis.getVoices().length > 0) {
+          speakWithVoices();
+        } else {
+          console.error('🔊 No voices available after timeout');
+          showNotification('❌ No speech voices available. Please check your browser settings.', 'info');
+          if (onEndCallback) onEndCallback();
+        }
+      }, 2000);
+    } else {
+      console.log('🔊 Voices already loaded, speaking immediately');
+      speakWithVoices();
     }
-
-    utterance.onstart = () => {
-      setIsSpeaking(prev => ({ ...prev, [conversationId + '_chat']: true }));
-    };
-
-    utterance.onend = () => {
-      setIsSpeaking(prev => ({ ...prev, [conversationId + '_chat']: false }));
-    };
-
-    window.speechSynthesis.speak(utterance);
   };
 
   return (
@@ -1124,10 +1894,19 @@ const ChatPage = () => {
                   <h2 className="text-3xl font-bold text-gray-800 mb-4">
                     Welcome to Data Analytics, {user?.firstName || user?.name || 'User'}!
                   </h2>
-                  <p className="text-gray-600 mb-8">
+                  <p className="text-gray-600 mb-4">
                     Upload your data and start querying with natural language. 
                     Your results will appear here.
                   </p>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                    <div className="flex items-center text-blue-700">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full mr-3"></div>
+                      <p className="text-sm">
+                        💾 <strong>Session Persistence:</strong> Your chat history, charts, and dashboard are automatically saved! 
+                        They'll be here when you return (until you logout).
+                      </p>
+                    </div>
+                  </div>
                   <div className="bg-white/50 backdrop-blur-sm rounded-lg p-4 border border-white/20">
                     <p className="text-sm text-gray-500">
                       👈 Use the chat panel to get started
@@ -1166,11 +1945,31 @@ const ChatPage = () => {
                             {isGeneratingPDF ? (
                               <>
                                 <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent mr-2"></div>
-                                Generating PDF...
+                                Generating...
                               </>
                             ) : (
                               <>
-                                💾 Download Dashboard
+                                📄 PDF
+                              </>
+                            )}
+                          </button>
+                          <button
+                            onClick={downloadDashboardExcel}
+                            disabled={isGeneratingPDF}
+                            className={`flex items-center px-3 py-1.5 rounded-lg transition-colors text-sm ${
+                              isGeneratingPDF 
+                                ? 'bg-gray-400 text-white cursor-not-allowed' 
+                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                            }`}
+                          >
+                            {isGeneratingPDF ? (
+                              <>
+                                <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent mr-2"></div>
+                                Generating...
+                              </>
+                            ) : (
+                              <>
+                                📊 Excel
                               </>
                             )}
                           </button>
@@ -1179,11 +1978,23 @@ const ChatPage = () => {
                     </div>
                     <button
                       onClick={() => {
+                        // Clear all state
                         setConversationHistory([]);
                         setChartCustomization({});
                         setPinnedCharts([]);
                         setShowDashboard(false);
                         chartInstances.current = {}; // Clear chart instances
+                        
+                        // Clear localStorage as well
+                        if (user) {
+                          const userKey = user.email || user.id || user.sub || 'default';
+                          localStorage.removeItem(`dashboardAgent_chatHistory_${userKey}`);
+                          localStorage.removeItem(`dashboardAgent_chartCustomization_${userKey}`);
+                          localStorage.removeItem(`dashboardAgent_pinnedCharts_${userKey}`);
+                          console.log('🗑️ Cleared all saved chat data from localStorage');
+                        }
+                        
+                        showNotification('🗑️ All chat history cleared!', 'info');
                       }}
                       className="flex items-center px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm"
                     >
@@ -1260,28 +2071,50 @@ const ChatPage = () => {
                           <div className="flex items-center justify-between">
                             <div className="text-blue-700">
                               <p className="font-medium">💡 Dashboard Ready!</p>
-                              <p className="text-sm">Click "Generate Report" to download an optimized PDF with full-size charts and clear axis labels.</p>
+                              <p className="text-sm">Download as PDF for reports or Excel for dynamic analysis with interactive charts.</p>
                             </div>
-                            <button
-                              onClick={downloadDashboard}
-                              disabled={isGeneratingPDF}
-                              className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
-                                isGeneratingPDF 
-                                  ? 'bg-gray-400 text-white cursor-not-allowed' 
-                                  : 'bg-blue-600 text-white hover:bg-blue-700'
-                              }`}
-                            >
-                              {isGeneratingPDF ? (
-                                <>
-                                  <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent mr-2"></div>
-                                  Generating...
-                                </>
-                              ) : (
-                                <>
-                                  📄 Generate Report
-                                </>
-                              )}
-                            </button>
+                            <div className="flex items-center space-x-2">
+                              <button
+                                onClick={downloadDashboard}
+                                disabled={isGeneratingPDF}
+                                className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
+                                  isGeneratingPDF 
+                                    ? 'bg-gray-400 text-white cursor-not-allowed' 
+                                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                                }`}
+                              >
+                                {isGeneratingPDF ? (
+                                  <>
+                                    <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent mr-2"></div>
+                                    Generating...
+                                  </>
+                                ) : (
+                                  <>
+                                    📄 PDF Report
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                onClick={downloadDashboardExcel}
+                                disabled={isGeneratingPDF}
+                                className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
+                                  isGeneratingPDF 
+                                    ? 'bg-gray-400 text-white cursor-not-allowed' 
+                                    : 'bg-green-600 text-white hover:bg-green-700'
+                                }`}
+                              >
+                                {isGeneratingPDF ? (
+                                  <>
+                                    <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent mr-2"></div>
+                                    Generating...
+                                  </>
+                                ) : (
+                                  <>
+                                    📊 Excel Dashboard
+                                  </>
+                                )}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1770,72 +2603,147 @@ const ChatPage = () => {
                                 )}
                               </div>
 
-                              {/* Chat Input */}
-                              <div className="flex items-center space-x-2">
-                                <div className="relative flex-1">
-                                  <input
-                                    type="text"
-                                    value={chatInput[conversation.id] || ''}
-                                    onChange={(e) => setChatInput(prev => ({ ...prev, [conversation.id]: e.target.value }))}
-                                    onKeyPress={(e) => e.key === 'Enter' && sendChatMessage(conversation.id)}
-                                    placeholder="Ask a question about this data... (e.g., 'What's the trend here?')"
-                                    className="w-full px-4 py-2 pr-12 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                                    disabled={isChatting[conversation.id]}
-                                  />
+                              {/* Voice Controls */}
+                              <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center space-x-2">
                                   <button
-                                    onClick={() => toggleChatVoiceInput(conversation.id)}
-                                    className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 rounded-full transition-all ${
-                                      isListeningToChat[conversation.id] 
-                                        ? 'bg-red-500 text-white animate-pulse' 
-                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                    onClick={() => toggleContinuousMode(conversation.id)}
+                                    className={`flex items-center px-4 py-2 rounded-lg transition-all font-medium ${
+                                      continuousMode[conversation.id]
+                                        ? 'bg-green-500 text-white hover:bg-green-600 shadow-lg' 
+                                        : 'bg-blue-500 text-white hover:bg-blue-600'
                                     }`}
-                                    title={isListeningToChat[conversation.id] ? 'Listening... speak now' : 'Voice input'}
                                   >
-                                    {isListeningToChat[conversation.id] ? (
-                                      <MicOff className="h-3 w-3" />
+                                    {continuousMode[conversation.id] ? (
+                                      <>
+                                        <VolumeX className="h-4 w-4 mr-2" />
+                                        Stop Conversation
+                                      </>
                                     ) : (
-                                      <Mic className="h-3 w-3" />
+                                      <>
+                                        <Mic className="h-4 w-4 mr-2" />
+                                        Start Voice Chat
+                                      </>
+                                    )}
+                                  </button>
+                                  
+                                  {!continuousMode[conversation.id] && (
+                                    <button
+                                      onClick={testSpeech}
+                                      className="flex items-center px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm"
+                                      title="Test if speech synthesis is working"
+                                    >
+                                      <Volume2 className="h-4 w-4 mr-1" />
+                                      Test Voice
+                                    </button>
+                                  )}
+                                </div>
+                                
+                                {continuousMode[conversation.id] && (
+                                  <div className="flex items-center space-x-3">
+                                    {/* Status Indicators */}
+                                    <div className="flex items-center space-x-2">
+                                      {isListeningToChat[conversation.id] && (
+                                        <div className="flex items-center text-green-600 bg-green-50 px-2 py-1 rounded-full">
+                                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2"></div>
+                                          <span className="text-xs font-medium">🎙️ Listening...</span>
+                                        </div>
+                                      )}
+                                      {isChatting[conversation.id] && (
+                                        <div className="flex items-center text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
+                                          <Bot className="h-4 w-4 mr-1 animate-pulse" />
+                                          <span className="text-xs font-medium">🤔 AI Thinking...</span>
+                                        </div>
+                                      )}
+                                      {isSpeaking[conversation.id + '_chat'] && (
+                                        <div className="flex items-center text-purple-600 bg-purple-50 px-2 py-1 rounded-full">
+                                          <Volume2 className="h-4 w-4 mr-1 animate-pulse" />
+                                          <span className="text-xs font-medium">🗣️ AI Speaking...</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                    
+                                    {/* Auto-interrupt indicator and manual interrupt button */}
+                                    <div className="flex items-center space-x-2">
+                                      {(isSpeaking[conversation.id + '_chat'] || isChatting[conversation.id]) && (
+                                        <div className="flex items-center px-3 py-1 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-full text-xs">
+                                          <Mic className="h-3 w-3 mr-1 animate-pulse" />
+                                          Just start talking to interrupt
+                                        </div>
+                                      )}
+                                      
+                                      {/* Manual interrupt button as backup */}
+                                      {(isSpeaking[conversation.id + '_chat'] || isChatting[conversation.id]) && (
+                                        <button
+                                          onClick={() => interruptAI(conversation.id)}
+                                          className="flex items-center px-2 py-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors text-xs"
+                                          title="Manual interrupt (backup)"
+                                        >
+                                          <VolumeX className="h-3 w-3" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Text Input (shown when not in continuous mode) */}
+                              {!continuousMode[conversation.id] && (
+                                <div className="flex items-center space-x-2">
+                                  <div className="relative flex-1">
+                                    <input
+                                      type="text"
+                                      value={chatInput[conversation.id] || ''}
+                                      onChange={(e) => setChatInput(prev => ({ ...prev, [conversation.id]: e.target.value }))}
+                                      onKeyPress={(e) => e.key === 'Enter' && sendChatMessage(conversation.id)}
+                                      placeholder="Type your question here... (or use voice chat above)"
+                                      className="w-full px-4 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                      disabled={isChatting[conversation.id]}
+                                    />
+                                  </div>
+                                  <button
+                                    onClick={() => sendChatMessage(conversation.id)}
+                                    disabled={isChatting[conversation.id] || !chatInput[conversation.id]?.trim()}
+                                    className={`px-4 py-2 rounded-lg transition-colors text-sm ${
+                                      isChatting[conversation.id] || !chatInput[conversation.id]?.trim()
+                                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                        : 'bg-blue-500 text-white hover:bg-blue-600'
+                                    }`}
+                                  >
+                                    {isChatting[conversation.id] ? (
+                                      <>
+                                        <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent mr-1 inline-block"></div>
+                                        Thinking...
+                                      </>
+                                    ) : (
+                                      <Send className="h-4 w-4" />
                                     )}
                                   </button>
                                 </div>
-                                <button
-                                  onClick={() => sendChatMessage(conversation.id)}
-                                  disabled={isChatting[conversation.id] || !chatInput[conversation.id]?.trim()}
-                                  className={`px-4 py-2 rounded-lg transition-colors text-sm ${
-                                    isChatting[conversation.id] || !chatInput[conversation.id]?.trim()
-                                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                      : 'bg-blue-500 text-white hover:bg-blue-600'
-                                  }`}
-                                >
-                                  {isChatting[conversation.id] ? (
-                                    <>
-                                      <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent mr-1 inline-block"></div>
-                                      Thinking...
-                                    </>
-                                  ) : (
-                                    <Send className="h-4 w-4" />
-                                  )}
-                                </button>
-                              </div>
-
-                              {/* Voice status indicator */}
-                              {isListeningToChat[conversation.id] && (
-                                <div className="mt-2 flex items-center justify-center text-red-600">
-                                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse mr-2"></div>
-                                  <span className="text-xs">🎙️ Listening... speak your question now</span>
-                                </div>
                               )}
 
-                              {/* Chat tips */}
+                              {/* Enhanced Chat tips */}
                               <div className="mt-4 p-3 bg-blue-100 rounded-lg border border-blue-200">
                                 <div className="flex items-start text-blue-700 text-sm">
                                   <MessageCircle className="h-4 w-4 mr-2 mt-0.5 flex-shrink-0" />
                                   <div>
-                                    <span className="font-medium">💡 Chat Tips:</span>
-                                    <span className="ml-2">
-                                      Ask natural questions like "What's the highest value?", "Explain the trend", or "What should I focus on?". 
-                                      Use the mic for voice input - AI responses are automatically spoken!
-                                    </span>
+                                    <span className="font-medium">💬 How to Chat:</span>
+                                    <div className="ml-2 mt-1">
+                                      <p className="mb-2">
+                                        <strong>🎙️ Voice Mode:</strong> Click "Start Voice Chat" once and just speak naturally! 
+                                        The AI will respond and automatically listen for your next question.
+                                      </p>
+                                      <p className="mb-2">
+                                        <strong>🛑 Auto-Interrupt:</strong> Just start talking anytime to interrupt the AI - no buttons needed! 
+                                        The system instantly stops the AI and listens to your new question.
+                                      </p>
+                                      <p className="mb-2">
+                                        <strong>⌨️ Text Mode:</strong> Type questions like "What's the highest value?", "Explain the trend", or "What should I focus on?"
+                                      </p>
+                                      <p className="text-xs text-blue-600">
+                                        💡 Try: "Tell me about the data", "What patterns do you see?", "Which values are outliers?"
+                                      </p>
+                                    </div>
                                   </div>
                                 </div>
                               </div>

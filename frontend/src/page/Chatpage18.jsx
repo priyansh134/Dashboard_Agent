@@ -8,6 +8,8 @@ import Skeleton from '../components/Skeleton';
 import { QueryInput } from "../components/QueryInput";
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { useUser } from '../context/UserContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -25,6 +27,7 @@ const ChatPage = () => {
   const [userQuery, setuserQuery] = useState("");
   const [userQueryy, setUserQueryy] = useState("");
   const [dataRows, setdataRows] = useState([]);
+  const [originalData, setOriginalData] = useState([]); // Store original uploaded file data
   const [isLoading, setIsLoading] = useState(false);
   const [display, setDisplay] = useState(false);
   const [filePath, setfilePath] = useState(null);
@@ -53,7 +56,9 @@ const ChatPage = () => {
   const chartRefs = useRef({});
   const chartInstances = useRef({});
   const chatRecognition = useRef({});
-  const url = "http://127.0.0.1:8080";
+  const interruptRecognition = useRef({}); // For detecting interruptions during AI speech
+  const url ="https://dashboard-agent-7.onrender.com"
+  // const url = "http://127.0.0.1:8080";
 
   // Show loading screen while checking authentication
   if (userLoading) {
@@ -69,6 +74,104 @@ const ChatPage = () => {
       </div>
     );
   }
+
+  // Load conversation history from localStorage on component mount
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      const userKey = user.email || user.id || user.sub || 'default';
+      const savedHistory = localStorage.getItem(`dashboardAgent_chatHistory_${userKey}`);
+      const savedChartCustomization = localStorage.getItem(`dashboardAgent_chartCustomization_${userKey}`);
+      const savedPinnedCharts = localStorage.getItem(`dashboardAgent_pinnedCharts_${userKey}`);
+      
+      if (savedHistory) {
+        try {
+          const parsedHistory = JSON.parse(savedHistory);
+          // Convert timestamp strings back to Date objects
+          const restoredHistory = parsedHistory.map(conv => ({
+            ...conv,
+            timestamp: new Date(conv.timestamp)
+          }));
+          setConversationHistory(restoredHistory);
+          console.log('📂 Restored conversation history:', restoredHistory.length, 'conversations');
+          
+          if (restoredHistory.length > 0) {
+            showNotification(`📂 Restored ${restoredHistory.length} previous conversations from your session!`, 'success');
+          }
+        } catch (error) {
+          console.error('Error parsing saved history:', error);
+        }
+      }
+      
+      if (savedChartCustomization) {
+        try {
+          setChartCustomization(JSON.parse(savedChartCustomization));
+          console.log('📂 Restored chart customizations');
+        } catch (error) {
+          console.error('Error parsing saved chart customization:', error);
+        }
+      }
+      
+      if (savedPinnedCharts) {
+        try {
+          const parsedPinned = JSON.parse(savedPinnedCharts);
+          // Convert timestamp strings back to Date objects
+          const restoredPinned = parsedPinned.map(chart => ({
+            ...chart,
+            timestamp: new Date(chart.timestamp)
+          }));
+          setPinnedCharts(restoredPinned);
+          console.log('📂 Restored pinned charts:', restoredPinned.length, 'charts');
+          
+          if (restoredPinned.length > 0) {
+            setTimeout(() => {
+              showNotification(`📌 Restored ${restoredPinned.length} pinned charts to your dashboard!`, 'success');
+            }, 1500); // Show after conversation history notification
+          }
+        } catch (error) {
+          console.error('Error parsing saved pinned charts:', error);
+        }
+      }
+    }
+  }, [isAuthenticated, user]);
+
+  // Save conversation history to localStorage whenever it changes
+  useEffect(() => {
+    if (isAuthenticated && user && conversationHistory.length > 0) {
+      try {
+        const userKey = user.email || user.id || user.sub || 'default';
+        localStorage.setItem(`dashboardAgent_chatHistory_${userKey}`, JSON.stringify(conversationHistory));
+        console.log('💾 Saved conversation history to localStorage');
+      } catch (error) {
+        console.error('Error saving conversation history:', error);
+      }
+    }
+  }, [conversationHistory, isAuthenticated, user]);
+
+  // Save chart customization to localStorage whenever it changes
+  useEffect(() => {
+    if (isAuthenticated && user && Object.keys(chartCustomization).length > 0) {
+      try {
+        const userKey = user.email || user.id || user.sub || 'default';
+        localStorage.setItem(`dashboardAgent_chartCustomization_${userKey}`, JSON.stringify(chartCustomization));
+        console.log('💾 Saved chart customizations to localStorage');
+      } catch (error) {
+        console.error('Error saving chart customization:', error);
+      }
+    }
+  }, [chartCustomization, isAuthenticated, user]);
+
+  // Save pinned charts to localStorage whenever it changes
+  useEffect(() => {
+    if (isAuthenticated && user && pinnedCharts.length > 0) {
+      try {
+        const userKey = user.email || user.id || user.sub || 'default';
+        localStorage.setItem(`dashboardAgent_pinnedCharts_${userKey}`, JSON.stringify(pinnedCharts));
+        console.log('💾 Saved pinned charts to localStorage');
+      } catch (error) {
+        console.error('Error saving pinned charts:', error);
+      }
+    }
+  }, [pinnedCharts, isAuthenticated, user]);
 
   // Redirect if not authenticated (backup check)
   if (!isAuthenticated) {
@@ -122,6 +225,21 @@ const ChatPage = () => {
         },
       });
       setfilePath(res.data.filePath);
+      
+      // Read and store the original file data
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const csvText = e.target.result;
+        Papa.parse(csvText, {
+          complete: (results) => {
+            setOriginalData(results.data);
+            console.log('📊 Original data stored:', results.data.length, 'rows');
+          },
+          header: false
+        });
+      };
+      reader.readAsText(file);
+      
       alert("File uploaded successfully!");
       return res.data;
     } catch (error) {
@@ -519,15 +637,62 @@ const ChatPage = () => {
     }
   }, []);
 
-  // Cleanup speech synthesis on component unmount
+  // Initialize speech synthesis and cleanup
   useEffect(() => {
+    // Initialize speech synthesis voices
+    if (window.speechSynthesis) {
+      // Trigger voice loading
+      const voices = window.speechSynthesis.getVoices();
+      console.log('🔊 Initial voices loaded:', voices.length);
+      
+      if (voices.length === 0) {
+        // Wait for voices to load
+        const handleVoicesChanged = () => {
+          console.log('🔊 Voices loaded on init:', window.speechSynthesis.getVoices().length);
+          window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
+        };
+        window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
+      }
+    }
+
     return () => {
       // Stop any ongoing speech when component unmounts
       if (window.speechSynthesis) {
         window.speechSynthesis.cancel();
       }
+      
+      // Stop all interrupt detection instances
+      Object.keys(interruptRecognition.current).forEach(conversationId => {
+        stopInterruptDetection(conversationId);
+      });
     };
   }, []);
+
+  // Test speech function
+  const testSpeech = () => {
+    const testText = "Hello! This is a test of the text to speech functionality. If you can hear this, the speech system is working correctly.";
+    
+    if (!window.speechSynthesis) {
+      showNotification('❌ Text-to-speech not supported in your browser', 'info');
+      return;
+    }
+
+    showNotification('🔊 Testing speech...', 'info');
+    
+    const utterance = new SpeechSynthesisUtterance(testText);
+    utterance.rate = 0.9;
+    utterance.volume = 1.0;
+    
+    utterance.onend = () => {
+      showNotification('✅ Speech test completed!', 'success');
+    };
+    
+    utterance.onerror = (e) => {
+      showNotification(`❌ Speech test failed: ${e.error}`, 'info');
+    };
+    
+    window.speechSynthesis.speak(utterance);
+  };
 
   const toggleVoiceRecognition = () => {
     if (!recognition) {
@@ -820,6 +985,285 @@ const ChatPage = () => {
     }
   };
 
+  const downloadDashboardExcel = async () => {
+    if (pinnedCharts.length === 0) {
+      showNotification('No charts pinned to download!', 'info');
+      return;
+    }
+
+    setIsGeneratingPDF(true);
+    showNotification('📊 Generating Excel dashboard with dynamic charts and original data...', 'info');
+
+    try {
+      // Create a new workbook with ExcelJS
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Analytics Dashboard';
+      workbook.lastModifiedBy = 'Analytics Dashboard';
+      workbook.created = new Date();
+      workbook.modified = new Date();
+
+      // 1. Dashboard Summary Sheet
+      const summarySheet = workbook.addWorksheet('Dashboard Summary', {
+        pageSetup: { paperSize: 9, orientation: 'portrait' }
+      });
+
+      // Add summary data
+      summarySheet.addRow(['📊 Analytics Dashboard Summary']);
+      summarySheet.addRow(['Generated on:', new Date().toLocaleDateString()]);
+      summarySheet.addRow(['Generated at:', new Date().toLocaleTimeString()]);
+      summarySheet.addRow(['Total Charts:', pinnedCharts.length]);
+      summarySheet.addRow(['Total Original Data Rows:', originalData.length]);
+      summarySheet.addRow([]);
+      summarySheet.addRow(['Chart #', 'Query', 'Chart Type', 'X-Axis', 'Y-Axis', 'Data Points', 'Sheet Name']);
+
+      pinnedCharts.forEach((chart, index) => {
+        const headers = chart.data[0] ? Object.keys(chart.data[0]) : [];
+        const xAxisField = headers[chart.customization.xAxis] || 'N/A';
+        const yAxisField = headers[chart.customization.yAxis] || 'N/A';
+        
+        summarySheet.addRow([
+          index + 1,
+          chart.query,
+          chart.customization.chartType.charAt(0).toUpperCase() + chart.customization.chartType.slice(1),
+          xAxisField,
+          yAxisField,
+          chart.data.length - 1, // Subtract header row
+          `Chart_${index + 1}`
+        ]);
+      });
+
+      // Style the summary sheet
+      summarySheet.getCell('A1').font = { bold: true, size: 16 };
+      summarySheet.getRow(7).font = { bold: true };
+      summarySheet.columns = [
+        { width: 12 }, { width: 50 }, { width: 15 }, { width: 20 }, { width: 20 }, { width: 15 }, { width: 20 }
+      ];
+
+      // 2. Original Uploaded Data Sheet
+      if (originalData.length > 0) {
+        const originalSheet = workbook.addWorksheet('Original Data');
+        originalSheet.addRow(['📋 Original Uploaded File Data']);
+        originalSheet.addRow(['This is the complete original data from your uploaded file']);
+        originalSheet.addRow([]);
+
+        // Add original data
+        originalData.forEach((row, index) => {
+          originalSheet.addRow(row);
+          if (index === 0) {
+            // Style header row
+            const headerRow = originalSheet.getRow(originalSheet.rowCount);
+            headerRow.font = { bold: true };
+            headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F2FF' } };
+          }
+        });
+
+        // Auto-fit columns for original data
+        originalSheet.columns.forEach(column => {
+          column.width = 15;
+        });
+
+        // Style the title
+        originalSheet.getCell('A1').font = { bold: true, size: 14 };
+        originalSheet.getCell('A2').font = { italic: true };
+      }
+
+      // 3. Individual Chart Sheets with Actual Excel Charts
+      for (let index = 0; index < pinnedCharts.length; index++) {
+        const chart = pinnedCharts[index];
+        if (!chart.data || chart.data.length === 0) continue;
+
+        const chartSheet = workbook.addWorksheet(`Chart_${index + 1}`);
+        const headers = Object.keys(chart.data[0]);
+        const xAxisField = headers[chart.customization.xAxis];
+        const yAxisField = headers[chart.customization.yAxis];
+
+        // Add chart metadata
+        chartSheet.addRow([`📊 Chart ${index + 1} - ${chart.customization.chartType.charAt(0).toUpperCase() + chart.customization.chartType.slice(1)} Chart`]);
+        chartSheet.addRow(['Query:', chart.query]);
+        chartSheet.addRow(['X-Axis:', xAxisField]);
+        chartSheet.addRow(['Y-Axis:', yAxisField]);
+        chartSheet.addRow(['Generated:', chart.timestamp.toLocaleString()]);
+        chartSheet.addRow([]);
+
+        // Add dynamic analysis formulas
+        chartSheet.addRow(['🔧 Dynamic Analysis (Click cells to see formulas):']);
+        const dataStartRow = 10;
+        const dataEndRow = dataStartRow + chart.data.length - 1;
+        
+        chartSheet.addRow(['Average:', { formula: `AVERAGE(${yAxisField}${dataStartRow}:${yAxisField}${dataEndRow})` }, '', `Average of ${yAxisField}`]);
+        chartSheet.addRow(['Count:', { formula: `COUNTA(${xAxisField}${dataStartRow}:${xAxisField}${dataEndRow})` }, '', 'Number of records']);
+        chartSheet.addRow(['Maximum:', { formula: `MAX(${yAxisField}${dataStartRow}:${yAxisField}${dataEndRow})` }, '', `Highest ${yAxisField}`]);
+        chartSheet.addRow(['Minimum:', { formula: `MIN(${yAxisField}${dataStartRow}:${yAxisField}${dataEndRow})` }, '', `Lowest ${yAxisField}`]);
+        chartSheet.addRow([]);
+
+        // Add data section
+        chartSheet.addRow(['📊 Chart Data (Source for the chart below):']);
+        
+        // Add headers
+        chartSheet.addRow(headers);
+        
+        // Add data rows
+        chart.data.forEach(row => {
+          chartSheet.addRow(Object.values(row));
+        });
+
+        // Style the data headers
+        const headerRow = chartSheet.getRow(dataStartRow - 1);
+        headerRow.font = { bold: true };
+        headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F2FF' } };
+
+        // Create Excel Chart
+        const chartEndRow = dataStartRow + chart.data.length - 1;
+        const xAxisColumn = String.fromCharCode(65 + chart.customization.xAxis); // A, B, C, etc.
+        const yAxisColumn = String.fromCharCode(65 + chart.customization.yAxis);
+
+        let excelChart;
+        
+        // Create chart based on type
+        if (chart.customization.chartType === 'pie') {
+          excelChart = chartSheet.addChart({
+            type: 'doughnut',
+            position: { x: 50, y: 350 }, // Position in pixels
+            size: { width: 600, height: 400 }
+          });
+
+          excelChart.addSeries({
+            categories: [`Chart_${index + 1}!${xAxisColumn}${dataStartRow}:${xAxisColumn}${chartEndRow}`],
+            values: [`Chart_${index + 1}!${yAxisColumn}${dataStartRow}:${yAxisColumn}${chartEndRow}`],
+            name: yAxisField
+          });
+        } else if (chart.customization.chartType === 'line') {
+          excelChart = chartSheet.addChart({
+            type: 'line',
+            position: { x: 50, y: 350 },
+            size: { width: 600, height: 400 }
+          });
+
+          excelChart.addSeries({
+            categories: [`Chart_${index + 1}!${xAxisColumn}${dataStartRow}:${xAxisColumn}${chartEndRow}`],
+            values: [`Chart_${index + 1}!${yAxisColumn}${dataStartRow}:${yAxisColumn}${chartEndRow}`],
+            name: yAxisField
+          });
+        } else { // bar chart (default)
+          excelChart = chartSheet.addChart({
+            type: 'column',
+            position: { x: 50, y: 350 },
+            size: { width: 600, height: 400 }
+          });
+
+          excelChart.addSeries({
+            categories: [`Chart_${index + 1}!${xAxisColumn}${dataStartRow}:${xAxisColumn}${chartEndRow}`],
+            values: [`Chart_${index + 1}!${yAxisColumn}${dataStartRow}:${yAxisColumn}${chartEndRow}`],
+            name: yAxisField
+          });
+        }
+
+        // Customize chart
+        excelChart.title = `${yAxisField} vs ${xAxisField}`;
+        excelChart.categoryAxis.title = xAxisField;
+        excelChart.valueAxis.title = yAxisField;
+
+        // Add instructions for dynamic modification
+        chartSheet.addRow([]);
+        chartSheet.addRow(['🔄 To Modify This Chart Dynamically:']);
+        chartSheet.addRow(['1. Right-click the chart and select "Edit Data"']);
+        chartSheet.addRow(['2. Modify the data range or add/remove data points']);
+        chartSheet.addRow(['3. Right-click chart → "Change Chart Type" to switch chart types']);
+        chartSheet.addRow(['4. Use "Chart Design" tab for styling and layout options']);
+        chartSheet.addRow(['5. Double-click chart elements to customize colors, fonts, etc.']);
+
+        // Style the sheet
+        chartSheet.getCell('A1').font = { bold: true, size: 14 };
+        chartSheet.getCell('A2').font = { bold: true };
+        chartSheet.getCell('A7').font = { bold: true };
+        chartSheet.getCell('A12').font = { bold: true };
+        
+        // Set column widths
+        chartSheet.columns = [
+          { width: 20 }, { width: 30 }, { width: 15 }, { width: 30 }
+        ];
+      }
+
+      // 4. Instructions Sheet
+      const instructionsSheet = workbook.addWorksheet('Instructions');
+      const instructions = [
+        ['🚀 Excel Dashboard - Complete Guide'],
+        [''],
+        ['Welcome to your interactive Excel dashboard with REAL Excel charts!'],
+        [''],
+        ['📊 MODIFYING CHARTS DYNAMICALLY:'],
+        ['• Right-click any chart → "Edit Data" to change data ranges'],
+        ['• Right-click chart → "Change Chart Type" to switch between bar/line/pie'],
+        ['• Use Chart Design tab to change colors, styles, and layouts'],
+        ['• Double-click chart elements (title, axis, data points) to customize'],
+        ['• Drag chart resize handles to change chart size'],
+        [''],
+        ['📈 WORKING WITH DATA:'],
+        ['• "Original Data" sheet contains your complete uploaded file'],
+        ['• Each "Chart_X" sheet has query-specific data with live Excel charts'],
+        ['• Modify data directly in cells - charts update automatically!'],
+        ['• Add new rows/columns - extend chart data ranges to include them'],
+        [''],
+        ['🔧 ADVANCED FEATURES:'],
+        ['• Pre-built formulas in each chart sheet for instant analysis'],
+        ['• Create Pivot Tables: Select data → Insert → PivotTable'],
+        ['• Add data validation for dropdown menus and data entry controls'],
+        ['• Use conditional formatting to highlight trends and outliers'],
+        [''],
+        ['💡 PRO TIPS FOR DYNAMIC CHARTS:'],
+        ['• Convert data ranges to Excel Tables (Ctrl+T) for auto-expanding charts'],
+        ['• Use dynamic named ranges with OFFSET() function for ultimate flexibility'],
+        ['• Create dashboard sheets that reference multiple chart sheets'],
+        ['• Set up slicers and filters for interactive data exploration'],
+        [''],
+        ['🎯 CHART MODIFICATION EXAMPLES:'],
+        ['• Change bar chart to line: Right-click chart → Change Chart Type → Line'],
+        ['• Add data series: Right-click chart → Select Data → Add Series'],
+        ['• Modify colors: Double-click chart → Format tab → Shape Styles'],
+        ['• Change axis labels: Double-click axis → Format Axis → Text Options'],
+        [''],
+        ['🔄 MAKING CHARTS AUTO-UPDATE:'],
+        ['• Select your data range and press Ctrl+T to create a Table'],
+        ['• Right-click chart → Edit Data → Select the Table range'],
+        ['• Now when you add data to the table, charts update automatically!'],
+        [''],
+        ['Need more help? Each chart sheet has specific modification instructions!']
+      ];
+
+      instructions.forEach(instruction => {
+        instructionsSheet.addRow(instruction);
+      });
+
+      // Style instructions
+      instructionsSheet.getCell('A1').font = { bold: true, size: 16 };
+      instructionsSheet.getColumn(1).width = 80;
+
+      // Generate and download the Excel file
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const fileName = `analytics-dashboard-${new Date().toISOString().split('T')[0]}.xlsx`;
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      console.log(`📊 Excel dashboard with real charts generated successfully: ${fileName}`);
+      showNotification(`✅ Excel dashboard downloaded! ${pinnedCharts.length} interactive charts + original data included.`, 'success');
+
+    } catch (error) {
+      console.error('Error generating Excel dashboard:', error);
+      showNotification('❌ Error generating Excel dashboard. Please try again.', 'error');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
   // AI Analysis Functions
   const analyzeData = async (conversationId, data, query) => {
     setAnalyzingData(prev => ({ ...prev, [conversationId]: true }));
@@ -918,9 +1362,12 @@ const ChatPage = () => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       const recognitionInstance = new SpeechRecognition();
-      recognitionInstance.continuous = false;
-      recognitionInstance.interimResults = false;
+      
+      // Configure for continuous conversation
+      recognitionInstance.continuous = true; // Keep listening for longer phrases
+      recognitionInstance.interimResults = true; // Get partial results
       recognitionInstance.lang = 'en-US';
+      recognitionInstance.maxAlternatives = 1;
 
       recognitionInstance.onstart = () => {
         setIsListeningToChat(prev => ({ ...prev, [conversationId]: true }));
@@ -928,43 +1375,75 @@ const ChatPage = () => {
       };
 
       recognitionInstance.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        console.log('🎙️ Voice transcript:', transcript);
-        setChatInput(prev => ({ ...prev, [conversationId]: transcript }));
+        let finalTranscript = '';
+        let interimTranscript = '';
         
-        // Auto-send the voice input
-        setTimeout(() => {
-          sendChatMessage(conversationId, transcript);
-        }, 300);
+        // Process all results
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          if (result.isFinal) {
+            finalTranscript += result[0].transcript;
+          } else {
+            interimTranscript += result[0].transcript;
+          }
+        }
+        
+        // Update input with interim results for better UX
+        if (interimTranscript) {
+          setChatInput(prev => ({ ...prev, [conversationId]: interimTranscript }));
+        }
+        
+        // Send message when we have a final result
+        if (finalTranscript.trim()) {
+          console.log('🎙️ Final transcript:', finalTranscript);
+          setChatInput(prev => ({ ...prev, [conversationId]: finalTranscript }));
+          
+          // Stop listening and send the message
+          recognitionInstance.stop();
+          
+          // Auto-send the voice input
+          setTimeout(() => {
+            sendChatMessage(conversationId, finalTranscript.trim());
+          }, 200);
+        }
       };
 
       recognitionInstance.onend = () => {
         console.log('🎙️ Voice recognition ended for conversation:', conversationId);
         setIsListeningToChat(prev => ({ ...prev, [conversationId]: false }));
         
-        // If in continuous mode, restart listening after AI response
-        if (continuousMode[conversationId] && !isChatting[conversationId]) {
+        // Auto-restart if we're still in continuous mode and not processing a chat
+        if (continuousMode[conversationId] && !isChatting[conversationId] && !isSpeaking[conversationId + '_chat']) {
+          console.log('🔄 Auto-restarting voice recognition (continuous mode)');
           setTimeout(() => {
-            if (continuousMode[conversationId]) {
-              console.log('🔄 Restarting voice recognition in continuous mode');
+            if (continuousMode[conversationId] && !isChatting[conversationId]) {
               startVoiceListening(conversationId);
             }
-          }, 2000); // Wait 2 seconds after AI finishes speaking
+          }, 1000);
         }
       };
 
       recognitionInstance.onerror = (event) => {
-        console.error('Chat speech recognition error:', event.error);
+        console.error('🎙️ Speech recognition error:', event.error);
         setIsListeningToChat(prev => ({ ...prev, [conversationId]: false }));
         
-        // Retry in continuous mode if it's a recoverable error
-        if (continuousMode[conversationId] && event.error !== 'aborted') {
+        // Handle different types of errors with smart retry
+        const recoverableErrors = ['network', 'audio-capture', 'no-speech', 'aborted'];
+        const shouldRetry = continuousMode[conversationId] && 
+                           recoverableErrors.includes(event.error);
+        
+        if (shouldRetry && !isChatting[conversationId]) {
+          console.log('🔄 Retrying voice recognition after error:', event.error);
           setTimeout(() => {
-            if (continuousMode[conversationId]) {
-              console.log('🔄 Retrying voice recognition after error');
+            if (continuousMode[conversationId] && !isChatting[conversationId]) {
               startVoiceListening(conversationId);
             }
           }, 1000);
+        } else if (event.error === 'not-allowed') {
+          showNotification('❌ Microphone access denied. Please allow microphone access.', 'info');
+          setContinuousMode(prev => ({ ...prev, [conversationId]: false }));
+        } else if (event.error === 'network') {
+          showNotification('❌ Network error in speech recognition. Check your connection.', 'info');
         }
       };
 
@@ -985,6 +1464,24 @@ const ChatPage = () => {
 
     try {
       recognition.start();
+      console.log('🎙️ Started voice listening for conversation:', conversationId);
+      
+      // Set a timeout to restart if it gets stuck
+      const timeoutKey = `${conversationId}_timeout`;
+      if (window[timeoutKey]) {
+        clearTimeout(window[timeoutKey]);
+      }
+      
+      window[timeoutKey] = setTimeout(() => {
+        console.log('🔄 Voice recognition timeout, restarting...');
+        if (continuousMode[conversationId] && !isChatting[conversationId] && !isSpeaking[conversationId + '_chat']) {
+          stopVoiceListening(conversationId);
+          setTimeout(() => {
+            startVoiceListening(conversationId);
+          }, 500);
+        }
+      }, 10000); // Restart after 10 seconds if no activity
+      
     } catch (error) {
       console.error('Error starting voice recognition:', error);
       setTimeout(() => {
@@ -1001,6 +1498,156 @@ const ChatPage = () => {
       recognition.stop();
     }
     setIsListeningToChat(prev => ({ ...prev, [conversationId]: false }));
+    
+    // Clear timeout
+    const timeoutKey = `${conversationId}_timeout`;
+    if (window[timeoutKey]) {
+      clearTimeout(window[timeoutKey]);
+      delete window[timeoutKey];
+    }
+  };
+
+  // Setup aggressive interrupt detection while AI is speaking
+  const setupInterruptDetection = (conversationId) => {
+    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+      return;
+    }
+
+    console.log('🎙️ Setting up aggressive interrupt detection for conversation:', conversationId);
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const interruptInstance = new SpeechRecognition();
+    
+    // Configure for ultra-fast detection
+    interruptInstance.continuous = true;
+    interruptInstance.interimResults = true;
+    interruptInstance.lang = 'en-US';
+
+    interruptInstance.onstart = () => {
+      console.log('🎙️ Interrupt detection ACTIVE - speak to interrupt');
+    };
+
+    interruptInstance.onresult = (event) => {
+      // Make interruption much more aggressive
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const transcript = result[0].transcript.trim();
+        const confidence = result[0].confidence;
+        
+        console.log(`🎙️ Detected speech: "${transcript}" (confidence: ${confidence}, final: ${result.isFinal})`);
+        
+                 // Trigger interrupt on ANY detectible speech
+         if (transcript.length > 0) {
+           // Very low threshold for immediate response
+           if (confidence > 0.3 || (transcript.length > 1 && confidence > 0.2)) {
+             console.log('🛑 INTERRUPTING AI NOW! User said:', transcript);
+             interruptAI(conversationId, transcript);
+             return; // Exit immediately
+           }
+         }
+      }
+    };
+
+    interruptInstance.onerror = (event) => {
+      console.log('🎙️ Interrupt detection error:', event.error);
+      // Restart interrupt detection if it fails (unless manually stopped)
+      if (event.error !== 'aborted' && continuousMode[conversationId] && isSpeaking[conversationId + '_chat']) {
+        setTimeout(() => {
+          console.log('🔄 Restarting interrupt detection after error');
+          setupInterruptDetection(conversationId);
+        }, 500);
+      }
+    };
+
+    interruptInstance.onend = () => {
+      console.log('🎙️ Interrupt detection ended');
+      // Restart if AI is still speaking and we're in continuous mode
+      if (continuousMode[conversationId] && isSpeaking[conversationId + '_chat']) {
+        setTimeout(() => {
+          console.log('🔄 Restarting interrupt detection (ended unexpectedly)');
+          setupInterruptDetection(conversationId);
+        }, 300);
+      }
+    };
+
+    interruptRecognition.current[conversationId] = interruptInstance;
+
+    try {
+      interruptInstance.start();
+      console.log('🎙️ Interrupt detection started successfully');
+    } catch (error) {
+      console.error('🎙️ Failed to start interrupt detection:', error);
+      // Retry once
+      setTimeout(() => {
+        try {
+          interruptInstance.start();
+        } catch (retryError) {
+          console.error('🎙️ Retry failed:', retryError);
+        }
+      }, 1000);
+    }
+  };
+
+  // Stop interrupt detection
+  const stopInterruptDetection = (conversationId) => {
+    const interruptInstance = interruptRecognition.current[conversationId];
+    if (interruptInstance) {
+      try {
+        interruptInstance.stop();
+        console.log('🎙️ Stopped interrupt detection');
+      } catch (error) {
+        console.log('🎙️ Error stopping interrupt detection:', error);
+      }
+      delete interruptRecognition.current[conversationId];
+    }
+  };
+
+  const interruptAI = (conversationId, userTranscript = null) => {
+    console.log('🛑 Interrupting AI for conversation:', conversationId, 'User said:', userTranscript);
+    
+    // Stop interrupt detection immediately
+    stopInterruptDetection(conversationId);
+    
+    // Stop any ongoing speech immediately
+    window.speechSynthesis.cancel();
+    setIsSpeaking(prev => ({ ...prev, [conversationId + '_chat']: false }));
+    
+    // Stop current voice recognition
+    stopVoiceListening(conversationId);
+    
+    if (userTranscript && userTranscript.trim().length > 2) {
+      // User already said something while interrupting, process it directly
+      console.log('🔄 Processing interrupt message:', userTranscript);
+      setChatInput(prev => ({ ...prev, [conversationId]: userTranscript }));
+      
+      setTimeout(() => {
+        sendChatMessage(conversationId, userTranscript.trim());
+        showNotification('🛑 Interrupted! Processing your question...', 'success');
+      }, 100);
+    } else {
+      // Start listening for the user's question immediately
+      setTimeout(() => {
+        if (continuousMode[conversationId]) {
+          console.log('🔄 Starting voice listening after interrupt');
+          startVoiceListening(conversationId);
+          showNotification('🎙️ Go ahead, I\'m listening...', 'success');
+        }
+      }, 200);
+    }
+  };
+
+  // Monitor and ensure conversation keeps going
+  const ensureContinuousConversation = (conversationId) => {
+    if (!continuousMode[conversationId]) return;
+    
+    // Check if we should be listening but aren't
+    const shouldBeListening = !isChatting[conversationId] && !isSpeaking[conversationId + '_chat'];
+    const isCurrentlyListening = isListeningToChat[conversationId];
+    
+    if (shouldBeListening && !isCurrentlyListening) {
+      console.log('🔄 Conversation got stuck, restarting listening...');
+      startVoiceListening(conversationId);
+    }
   };
 
   const toggleContinuousMode = (conversationId) => {
@@ -1013,13 +1660,38 @@ const ChatPage = () => {
 
     if (newContinuousMode) {
       // Start continuous mode
-      showNotification('🎙️ Continuous voice mode activated! Speak naturally.', 'success');
-      startVoiceListening(conversationId);
+      showNotification('🎙️ Continuous voice mode activated! Just speak naturally - you can interrupt anytime by talking!', 'success');
+      // Wait a moment then start listening
+      setTimeout(() => {
+        startVoiceListening(conversationId);
+        
+        // Set up monitoring to ensure conversation keeps going
+        const monitorInterval = setInterval(() => {
+          ensureContinuousConversation(conversationId);
+        }, 3000); // Check every 3 seconds
+        
+        // Store interval for cleanup
+        const cleanupKey = `${conversationId}_monitor`;
+        if (window[cleanupKey]) {
+          clearInterval(window[cleanupKey]);
+        }
+        window[cleanupKey] = monitorInterval;
+        
+      }, 500);
     } else {
       // Stop continuous mode
       showNotification('🎙️ Continuous voice mode deactivated.', 'info');
       stopVoiceListening(conversationId);
+      stopInterruptDetection(conversationId); // Stop interrupt detection
       window.speechSynthesis.cancel(); // Stop any ongoing speech
+      setIsSpeaking(prev => ({ ...prev, [conversationId + '_chat']: false }));
+      
+      // Clear monitoring
+      const cleanupKey = `${conversationId}_monitor`;
+      if (window[cleanupKey]) {
+        clearInterval(window[cleanupKey]);
+        delete window[cleanupKey];
+      }
     }
   };
 
@@ -1071,17 +1743,19 @@ const ChatPage = () => {
         // Auto-speak the response and handle continuous mode
         setTimeout(() => {
           speakChatResponse(conversationId, response.data.answer, () => {
-            // Callback when speech finishes - restart listening in continuous mode
-            if (continuousMode[conversationId] && !isChatting[conversationId]) {
+            // Callback when speech finishes - immediately restart listening
+            console.log('🔄 AI finished speaking, restarting listening for continuous conversation...');
+            if (continuousMode[conversationId]) {
               setTimeout(() => {
-                if (continuousMode[conversationId]) {
+                if (continuousMode[conversationId] && !isChatting[conversationId]) {
                   console.log('🔄 Restarting voice listening after AI response');
                   startVoiceListening(conversationId);
+                  showNotification('🎙️ Ready for your next question...', 'info');
                 }
-              }, 1000);
+              }, 400); // Shorter delay for better responsiveness
             }
           });
-        }, 300);
+        }, 50); // Start speech almost immediately
 
         showNotification('🤖 AI responded!', 'success');
       } else {
@@ -1096,84 +1770,142 @@ const ChatPage = () => {
   };
 
   const speakChatResponse = (conversationId, text, onEndCallback = null) => {
-    // Stop any current speech
-    window.speechSynthesis.cancel();
+    console.log('🔊 Starting speech synthesis for:', text.substring(0, 50) + '...');
 
     if (!window.speechSynthesis) {
-      console.warn('Text-to-speech not supported in this browser');
+      console.error('❌ Text-to-speech not supported in this browser');
+      showNotification('❌ Text-to-speech not supported in your browser', 'info');
       if (onEndCallback) onEndCallback();
       return;
     }
 
-    // Wait for voices to load if they haven't already
+    // Stop any current speech first
+    window.speechSynthesis.cancel();
+
+    // Function to ensure voices are loaded and speak
     const speakWithVoices = () => {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.9;
-      utterance.pitch = 1.0;
-      utterance.volume = 0.8;
-
-      // Find a good voice
-      const voices = window.speechSynthesis.getVoices();
-      console.log('Available voices:', voices.length);
-      
-      const preferredVoice = voices.find(voice => 
-        voice.lang.startsWith('en-US') && !voice.name.includes('Microsoft')
-      ) || voices.find(voice => 
-        voice.lang.startsWith('en')
-      ) || voices[0];
-
-      if (preferredVoice) {
-        utterance.voice = preferredVoice;
-        console.log('Using voice:', preferredVoice.name);
-      }
-
-      utterance.onstart = () => {
-        console.log('🔊 Started speaking:', text.substring(0, 50) + '...');
-        setIsSpeaking(prev => ({ ...prev, [conversationId + '_chat']: true }));
-      };
-
-      utterance.onend = () => {
-        console.log('🔊 Finished speaking');
-        setIsSpeaking(prev => ({ ...prev, [conversationId + '_chat']: false }));
-        if (onEndCallback) {
-          setTimeout(onEndCallback, 500); // Small delay before callback
-        }
-      };
-
-      utterance.onerror = (event) => {
-        console.error('Speech synthesis error:', event.error);
-        setIsSpeaking(prev => ({ ...prev, [conversationId + '_chat']: false }));
-        if (onEndCallback) onEndCallback();
-      };
-
       try {
+        const utterance = new SpeechSynthesisUtterance(text);
+        
+        // Configure speech settings for better clarity
+        utterance.rate = 0.85;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+        utterance.lang = 'en-US';
+
+        // Get available voices
+        const voices = window.speechSynthesis.getVoices();
+        console.log('🔊 Available voices:', voices.length);
+        
+        if (voices.length > 0) {
+          // Try to find the best voice
+          const preferredVoice = 
+            voices.find(voice => voice.name.includes('Google US English')) ||
+            voices.find(voice => voice.name.includes('Microsoft Zira')) ||
+            voices.find(voice => voice.lang === 'en-US' && voice.localService) ||
+            voices.find(voice => voice.lang.startsWith('en-US')) ||
+            voices.find(voice => voice.lang.startsWith('en')) ||
+            voices[0];
+
+          if (preferredVoice) {
+            utterance.voice = preferredVoice;
+            console.log('🔊 Using voice:', preferredVoice.name, '- Local:', preferredVoice.localService);
+          }
+        }
+
+        // Set up event handlers
+        utterance.onstart = () => {
+          console.log('🔊 Speech started successfully');
+          setIsSpeaking(prev => ({ ...prev, [conversationId + '_chat']: true }));
+          
+          // Start interrupt detection immediately when AI begins speaking
+          if (continuousMode[conversationId]) {
+            setTimeout(() => {
+              setupInterruptDetection(conversationId);
+            }, 100); // Very short delay to avoid setup conflicts
+          }
+        };
+
+        utterance.onend = () => {
+          console.log('🔊 Speech finished naturally');
+          setIsSpeaking(prev => ({ ...prev, [conversationId + '_chat']: false }));
+          
+          // Stop interrupt detection since speech ended naturally
+          stopInterruptDetection(conversationId);
+          
+          if (onEndCallback) {
+            // Wait a bit before restarting listening
+            setTimeout(onEndCallback, 600);
+          }
+        };
+
+        utterance.onerror = (event) => {
+          console.error('🔊 Speech error:', event.error);
+          setIsSpeaking(prev => ({ ...prev, [conversationId + '_chat']: false }));
+          
+          // Stop interrupt detection on error
+          stopInterruptDetection(conversationId);
+          
+          showNotification(`Speech error: ${event.error}`, 'info');
+          if (onEndCallback) onEndCallback();
+        };
+
+        utterance.onpause = () => {
+          console.log('🔊 Speech paused');
+        };
+
+        utterance.onresume = () => {
+          console.log('🔊 Speech resumed');
+        };
+
+        // Start speaking
         window.speechSynthesis.speak(utterance);
-        console.log('🔊 Speech synthesis started successfully');
+        console.log('🔊 Speech command sent to browser');
+
+        // Verify that speaking started (fallback check)
+        setTimeout(() => {
+          if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending) {
+            console.warn('🔊 Speech may not have started, trying alternative approach');
+            // Try again with a different approach
+            window.speechSynthesis.cancel();
+            setTimeout(() => {
+              window.speechSynthesis.speak(utterance);
+            }, 100);
+          }
+        }, 200);
+
       } catch (error) {
-        console.error('Error starting speech synthesis:', error);
+        console.error('🔊 Error creating speech utterance:', error);
         if (onEndCallback) onEndCallback();
       }
     };
 
-    // Check if voices are loaded
+    // Ensure voices are loaded
     const voices = window.speechSynthesis.getVoices();
     if (voices.length === 0) {
-      // Wait for voices to load
-      window.speechSynthesis.onvoiceschanged = () => {
+      console.log('🔊 Waiting for voices to load...');
+      
+      // Set up voice loading handler
+      const handleVoicesChanged = () => {
+        console.log('🔊 Voices loaded:', window.speechSynthesis.getVoices().length);
         speakWithVoices();
-        window.speechSynthesis.onvoiceschanged = null; // Remove listener
+        window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
       };
       
-      // Fallback timeout in case onvoiceschanged doesn't fire
+      window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
+      
+      // Fallback timeout
       setTimeout(() => {
         if (window.speechSynthesis.getVoices().length > 0) {
           speakWithVoices();
         } else {
-          console.warn('No voices available for text-to-speech');
+          console.error('🔊 No voices available after timeout');
+          showNotification('❌ No speech voices available. Please check your browser settings.', 'info');
           if (onEndCallback) onEndCallback();
         }
-      }, 1000);
+      }, 2000);
     } else {
+      console.log('🔊 Voices already loaded, speaking immediately');
       speakWithVoices();
     }
   };
@@ -1241,10 +1973,19 @@ const ChatPage = () => {
                   <h2 className="text-3xl font-bold text-gray-800 mb-4">
                     Welcome to Data Analytics, {user?.firstName || user?.name || 'User'}!
                   </h2>
-                  <p className="text-gray-600 mb-8">
+                  <p className="text-gray-600 mb-4">
                     Upload your data and start querying with natural language. 
                     Your results will appear here.
                   </p>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                    <div className="flex items-center text-blue-700">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full mr-3"></div>
+                      <p className="text-sm">
+                        💾 <strong>Session Persistence:</strong> Your chat history, charts, and dashboard are automatically saved! 
+                        They'll be here when you return (until you logout).
+                      </p>
+                    </div>
+                  </div>
                   <div className="bg-white/50 backdrop-blur-sm rounded-lg p-4 border border-white/20">
                     <p className="text-sm text-gray-500">
                       👈 Use the chat panel to get started
@@ -1283,11 +2024,31 @@ const ChatPage = () => {
                             {isGeneratingPDF ? (
                               <>
                                 <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent mr-2"></div>
-                                Generating PDF...
+                                Generating...
                               </>
                             ) : (
                               <>
-                                💾 Download Dashboard
+                                📄 PDF
+                              </>
+                            )}
+                          </button>
+                          <button
+                            onClick={downloadDashboardExcel}
+                            disabled={isGeneratingPDF}
+                            className={`flex items-center px-3 py-1.5 rounded-lg transition-colors text-sm ${
+                              isGeneratingPDF 
+                                ? 'bg-gray-400 text-white cursor-not-allowed' 
+                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                            }`}
+                          >
+                            {isGeneratingPDF ? (
+                              <>
+                                <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent mr-2"></div>
+                                Generating...
+                              </>
+                            ) : (
+                              <>
+                                📊 Excel
                               </>
                             )}
                           </button>
@@ -1296,11 +2057,23 @@ const ChatPage = () => {
                     </div>
                     <button
                       onClick={() => {
+                        // Clear all state
                         setConversationHistory([]);
                         setChartCustomization({});
                         setPinnedCharts([]);
                         setShowDashboard(false);
                         chartInstances.current = {}; // Clear chart instances
+                        
+                        // Clear localStorage as well
+                        if (user) {
+                          const userKey = user.email || user.id || user.sub || 'default';
+                          localStorage.removeItem(`dashboardAgent_chatHistory_${userKey}`);
+                          localStorage.removeItem(`dashboardAgent_chartCustomization_${userKey}`);
+                          localStorage.removeItem(`dashboardAgent_pinnedCharts_${userKey}`);
+                          console.log('🗑️ Cleared all saved chat data from localStorage');
+                        }
+                        
+                        showNotification('🗑️ All chat history cleared!', 'info');
                       }}
                       className="flex items-center px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm"
                     >
@@ -1377,28 +2150,50 @@ const ChatPage = () => {
                           <div className="flex items-center justify-between">
                             <div className="text-blue-700">
                               <p className="font-medium">💡 Dashboard Ready!</p>
-                              <p className="text-sm">Click "Generate Report" to download an optimized PDF with full-size charts and clear axis labels.</p>
+                              <p className="text-sm">Download as PDF for reports or Excel for dynamic analysis with interactive charts.</p>
                             </div>
-                            <button
-                              onClick={downloadDashboard}
-                              disabled={isGeneratingPDF}
-                              className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
-                                isGeneratingPDF 
-                                  ? 'bg-gray-400 text-white cursor-not-allowed' 
-                                  : 'bg-blue-600 text-white hover:bg-blue-700'
-                              }`}
-                            >
-                              {isGeneratingPDF ? (
-                                <>
-                                  <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent mr-2"></div>
-                                  Generating...
-                                </>
-                              ) : (
-                                <>
-                                  📄 Generate Report
-                                </>
-                              )}
-                            </button>
+                            <div className="flex items-center space-x-2">
+                              <button
+                                onClick={downloadDashboard}
+                                disabled={isGeneratingPDF}
+                                className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
+                                  isGeneratingPDF 
+                                    ? 'bg-gray-400 text-white cursor-not-allowed' 
+                                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                                }`}
+                              >
+                                {isGeneratingPDF ? (
+                                  <>
+                                    <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent mr-2"></div>
+                                    Generating...
+                                  </>
+                                ) : (
+                                  <>
+                                    📄 PDF Report
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                onClick={downloadDashboardExcel}
+                                disabled={isGeneratingPDF}
+                                className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
+                                  isGeneratingPDF 
+                                    ? 'bg-gray-400 text-white cursor-not-allowed' 
+                                    : 'bg-green-600 text-white hover:bg-green-700'
+                                }`}
+                              >
+                                {isGeneratingPDF ? (
+                                  <>
+                                    <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent mr-2"></div>
+                                    Generating...
+                                  </>
+                                ) : (
+                                  <>
+                                    📊 Excel Dashboard
+                                  </>
+                                )}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1889,47 +2684,84 @@ const ChatPage = () => {
 
                               {/* Voice Controls */}
                               <div className="flex items-center justify-between mb-4">
-                                <button
-                                  onClick={() => toggleContinuousMode(conversation.id)}
-                                  className={`flex items-center px-4 py-2 rounded-lg transition-all font-medium ${
-                                    continuousMode[conversation.id]
-                                      ? 'bg-green-500 text-white hover:bg-green-600 shadow-lg' 
-                                      : 'bg-blue-500 text-white hover:bg-blue-600'
-                                  }`}
-                                >
-                                  {continuousMode[conversation.id] ? (
-                                    <>
-                                      <VolumeX className="h-4 w-4 mr-2" />
-                                      Stop Conversation
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Mic className="h-4 w-4 mr-2" />
-                                      Start Voice Chat
-                                    </>
+                                <div className="flex items-center space-x-2">
+                                  <button
+                                    onClick={() => toggleContinuousMode(conversation.id)}
+                                    className={`flex items-center px-4 py-2 rounded-lg transition-all font-medium ${
+                                      continuousMode[conversation.id]
+                                        ? 'bg-green-500 text-white hover:bg-green-600 shadow-lg' 
+                                        : 'bg-blue-500 text-white hover:bg-blue-600'
+                                    }`}
+                                  >
+                                    {continuousMode[conversation.id] ? (
+                                      <>
+                                        <VolumeX className="h-4 w-4 mr-2" />
+                                        Stop Conversation
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Mic className="h-4 w-4 mr-2" />
+                                        Start Voice Chat
+                                      </>
+                                    )}
+                                  </button>
+                                  
+                                  {!continuousMode[conversation.id] && (
+                                    <button
+                                      onClick={testSpeech}
+                                      className="flex items-center px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm"
+                                      title="Test if speech synthesis is working"
+                                    >
+                                      <Volume2 className="h-4 w-4 mr-1" />
+                                      Test Voice
+                                    </button>
                                   )}
-                                </button>
+                                </div>
                                 
                                 {continuousMode[conversation.id] && (
-                                  <div className="flex items-center space-x-2">
-                                    {isListeningToChat[conversation.id] && (
-                                      <div className="flex items-center text-green-600">
-                                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2"></div>
-                                        <span className="text-xs font-medium">Listening...</span>
-                                      </div>
-                                    )}
-                                    {isChatting[conversation.id] && (
-                                      <div className="flex items-center text-blue-600">
-                                        <Bot className="h-4 w-4 mr-1 animate-pulse" />
-                                        <span className="text-xs font-medium">AI Thinking...</span>
-                                      </div>
-                                    )}
-                                    {isSpeaking[conversation.id + '_chat'] && (
-                                      <div className="flex items-center text-purple-600">
-                                        <Volume2 className="h-4 w-4 mr-1 animate-pulse" />
-                                        <span className="text-xs font-medium">AI Speaking...</span>
-                                      </div>
-                                    )}
+                                  <div className="flex items-center space-x-3">
+                                    {/* Status Indicators */}
+                                    <div className="flex items-center space-x-2">
+                                      {isListeningToChat[conversation.id] && (
+                                        <div className="flex items-center text-green-600 bg-green-50 px-2 py-1 rounded-full">
+                                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2"></div>
+                                          <span className="text-xs font-medium">🎙️ Listening...</span>
+                                        </div>
+                                      )}
+                                      {isChatting[conversation.id] && (
+                                        <div className="flex items-center text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
+                                          <Bot className="h-4 w-4 mr-1 animate-pulse" />
+                                          <span className="text-xs font-medium">🤔 AI Thinking...</span>
+                                        </div>
+                                      )}
+                                      {isSpeaking[conversation.id + '_chat'] && (
+                                        <div className="flex items-center text-purple-600 bg-purple-50 px-2 py-1 rounded-full">
+                                          <Volume2 className="h-4 w-4 mr-1 animate-pulse" />
+                                          <span className="text-xs font-medium">🗣️ AI Speaking...</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                    
+                                    {/* Auto-interrupt indicator and manual interrupt button */}
+                                    <div className="flex items-center space-x-2">
+                                      {(isSpeaking[conversation.id + '_chat'] || isChatting[conversation.id]) && (
+                                        <div className="flex items-center px-3 py-1 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-full text-xs">
+                                          <Mic className="h-3 w-3 mr-1 animate-pulse" />
+                                          Just start talking to interrupt
+                                        </div>
+                                      )}
+                                      
+                                      {/* Manual interrupt button as backup */}
+                                      {(isSpeaking[conversation.id + '_chat'] || isChatting[conversation.id]) && (
+                                        <button
+                                          onClick={() => interruptAI(conversation.id)}
+                                          className="flex items-center px-2 py-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors text-xs"
+                                          title="Manual interrupt (backup)"
+                                        >
+                                          <VolumeX className="h-3 w-3" />
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -1979,6 +2811,10 @@ const ChatPage = () => {
                                       <p className="mb-2">
                                         <strong>🎙️ Voice Mode:</strong> Click "Start Voice Chat" once and just speak naturally! 
                                         The AI will respond and automatically listen for your next question.
+                                      </p>
+                                      <p className="mb-2">
+                                        <strong>🛑 Auto-Interrupt:</strong> Just start talking anytime to interrupt the AI - no buttons needed! 
+                                        The system instantly stops the AI and listens to your new question.
                                       </p>
                                       <p className="mb-2">
                                         <strong>⌨️ Text Mode:</strong> Type questions like "What's the highest value?", "Explain the trend", or "What should I focus on?"
