@@ -55,7 +55,7 @@ const ChatPage = () => {
   const chartInstances = useRef({});
   const chatRecognition = useRef({});
   const interruptRecognition = useRef({}); // For detecting interruptions during AI speech
-  const url = "https://dashboard-agent-7.onrender.com";
+  const url = "https://dashboard-agent-6.onrender.com";
 
   // Show loading screen while checking authentication
   if (userLoading) {
