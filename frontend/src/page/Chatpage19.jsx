@@ -8,7 +8,6 @@ import Skeleton from '../components/Skeleton';
 import { QueryInput } from "../components/QueryInput";
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import PptxGenJS from 'pptxgenjs';
 import { useUser } from '../context/UserContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -742,333 +741,6 @@ const ChatPage = () => {
 
   const isChartPinned = (conversationId) => {
     return pinnedCharts.some(chart => chart.id === conversationId);
-  };
-
-  const generatePresentation = async () => {
-    if (pinnedCharts.length === 0) {
-      showNotification('No charts pinned for presentation!', 'info');
-      return;
-    }
-
-    setIsGeneratingPDF(true);
-    showNotification('🎯 Generating PowerPoint presentation with AI insights...', 'info');
-
-    try {
-      // First, generate AI insights for each chart
-      const response = await axios.post(`${url}/generate_presentation_insights`, {
-        charts: pinnedCharts
-      });
-
-      if (!response.data.success) {
-        throw new Error('Failed to generate insights');
-      }
-
-      const insights = response.data.insights;
-
-      // Create PowerPoint presentation
-      await createPowerPointPresentation(insights);
-
-      showNotification(`✅ Clean PowerPoint presentation generated! ${pinnedCharts.length + 2} slides with minimalist design and perfect centering.`, 'success');
-
-    } catch (error) {
-      console.error('Error generating presentation:', error);
-      showNotification('❌ Error generating presentation. Please try again.', 'error');
-    } finally {
-      setIsGeneratingPDF(false);
-    }
-  };
-
-  const createPowerPointPresentation = async (insights) => {
-    try {
-      // Create new PowerPoint presentation with professional theme
-      const pptx = new PptxGenJS();
-      
-      // Set presentation properties
-      pptx.author = 'Analytics Dashboard';
-      pptx.company = 'Data Analytics Team';
-      pptx.subject = 'Chart Analysis & Insights';
-      pptx.title = 'Analytics Dashboard Presentation';
-      
-              // Define exact color scheme matching the reference design
-        const colors = {
-          primary: '1A5490',     // Deep blue (matching reference)
-          secondary: '3B82F6',   // Bright blue  
-          accent: '8B5CF6',      // Purple accent
-          purple: '6D28D9',      // Deep purple (matching reference)
-          lightBlue: '60A5FA',   // Light blue for geometry
-          lightPurple: 'A78BFA', // Light purple for geometry
-          text: '1F2937',        // Dark text
-          background: 'FFFFFF',  // White background
-          grayText: '6B7280'     // Gray text for subtitles
-        };
-
-              // =======================
-        // SLIDE 1: Title Slide (Matching Reference Design)
-        // =======================
-        const titleSlide = pptx.addSlide();
-        titleSlide.background = { fill: colors.background };
-        
-        // No geometric shapes on title slide - clean design
-        
-        // Main title (exactly like reference)
-        titleSlide.addText('ANALYTICS', {
-          x: 0.8, y: 2.2, w: 6, h: 0.8,
-          fontSize: 64,
-          bold: true,
-          color: colors.primary,
-          align: 'left',
-          fontFace: 'Arial Black'
-        });
-        
-        titleSlide.addText('PROJECT', {
-          x: 0.8, y: 3, w: 6, h: 0.8,
-          fontSize: 64,
-          bold: true,
-          color: colors.primary,
-          align: 'left',
-          fontFace: 'Arial Black'
-        });
-        
-        // Subtitle (matching reference style)
-        titleSlide.addText('PRESENTED BY DATA INSIGHTS TEAM', {
-          x: 0.8, y: 4.2, w: 6, h: 0.4,
-          fontSize: 16,
-          color: colors.secondary,
-          align: 'left',
-          fontFace: 'Arial'
-        });
-        
-        // Add chart visualization frames (replacing building images)
-        titleSlide.addShape(pptx.ShapeType.rect, {
-          x: 6.8, y: 2.3, w: 2.8, h: 1.8,
-          fill: colors.background,
-          line: { color: colors.primary, width: 3 },
-          rotate: 15
-        });
-        
-        titleSlide.addText('📊', {
-          x: 7.3, y: 2.9, w: 1.8, h: 0.6,
-          fontSize: 32,
-          align: 'center'
-        });
-        
-        titleSlide.addShape(pptx.ShapeType.rect, {
-          x: 5.8, y: 3.5, w: 2.2, h: 1.4,
-          fill: colors.background,
-          line: { color: colors.purple, width: 3 },
-          rotate: -10
-        });
-        
-        titleSlide.addText('📈', {
-          x: 6.2, y: 3.9, w: 1.4, h: 0.6,
-          fontSize: 24,
-          align: 'center'
-        });
-        
-        // No diamonds on title slide - clean design
-
-              // =======================
-        // SLIDES 2+: Chart Analysis Slides (Left Chart + Right Text Layout)
-        // =======================
-        for (let i = 0; i < pinnedCharts.length; i++) {
-          const chart = pinnedCharts[i];
-          const insight = insights.find(ins => ins.chart_id === chart.id);
-          
-          const chartSlide = pptx.addSlide();
-          chartSlide.background = { fill: colors.background };
-          
-          // Add simple blue lines at top and bottom (like in reference image)
-          // Top blue line
-          chartSlide.addShape(pptx.ShapeType.rect, {
-            x: 0, y: 0, w: 10, h: 0.15,
-            fill: colors.primary,
-            line: { width: 0 }
-          });
-          
-          // Bottom blue line
-          chartSlide.addShape(pptx.ShapeType.rect, {
-            x: 0, y: 6.85, w: 10, h: 0.15,
-            fill: colors.primary,
-            line: { width: 0 }
-          });
-          
-          // Parse data for smart descriptions
-          const headers = chart.data[0] || [];
-          const xAxisField = headers[chart.customization.xAxis] || 'Category';
-          const yAxisField = headers[chart.customization.yAxis] || 'Value';
-          
-          // Get specific data examples
-          const sampleData = chart.data.slice(1, 4); // First 3 data rows
-          let smartDescription = '';
-          
-          if (sampleData.length > 0) {
-            const examples = sampleData.map(row => {
-              const xValue = row[chart.customization.xAxis];
-              const yValue = row[chart.customization.yAxis];
-              if (yAxisField.toLowerCase().includes('salary')) {
-                return `**Employee ID ${xValue}** has a **salary of ${yValue}**`;
-              } else if (yAxisField.toLowerCase().includes('sales')) {
-                return `**${xAxisField} ${xValue}** achieved **sales of ${yValue}**`;
-              } else if (yAxisField.toLowerCase().includes('revenue')) {
-                return `**${xAxisField} ${xValue}** generated **revenue of ${yValue}**`;
-              } else {
-                return `**${xAxisField} ${xValue}** shows **${yAxisField} of ${yValue}**`;
-              }
-            });
-            
-            smartDescription = `This **${chart.customization.chartType} chart** reveals crucial insights about **${yAxisField}** across different **${xAxisField}** values. Our analysis shows: ${examples[0]}${examples[1] ? `, ${examples[1]}` : ''}${examples[2] ? `, and ${examples[2]}` : ''}. These **data patterns** indicate **significant trends** that require **strategic attention** and can drive **informed decision-making** for improved **business performance**.`;
-          } else {
-            smartDescription = `This **${chart.customization.chartType} visualization** displays **${yAxisField}** organized by **${xAxisField}**. The analysis reveals **important patterns** that provide **actionable insights** for **strategic planning** and **operational improvements**. **Key findings** demonstrate **critical trends** that guide **business decisions**.`;
-          }
-
-          // LEFT SIDE: Chart area (optimized positioning with blue line header)
-          chartSlide.addShape(pptx.ShapeType.rect, {
-            x: 0.5, y: 0.6, w: 4.5, h: 4.5,
-            fill: colors.background,
-            line: { color: colors.primary, width: 3 },
-            rounding: 10
-          });
-
-          // Capture and add chart image on LEFT (optimized for blue line layout)
-          const chartElement = document.querySelector(`[data-chart-id="${chart.id}"]`);
-          if (chartElement) {
-            try {
-              const canvas = await html2canvas(chartElement, {
-                backgroundColor: '#ffffff',
-                scale: 3,
-                logging: false,
-                useCORS: true,
-                width: chartElement.offsetWidth,
-                height: chartElement.offsetHeight
-              });
-              const chartImageData = canvas.toDataURL('image/png');
-              
-              chartSlide.addImage({
-                data: chartImageData,
-                x: 0.7, y: 0.8, w: 4.1, h: 4.1,
-                rounding: 8
-              });
-            } catch (error) {
-              console.warn('Could not capture chart image:', error);
-              chartSlide.addShape(pptx.ShapeType.rect, {
-                x: 0.7, y: 0.8, w: 4.1, h: 4.1,
-                fill: colors.lightBlue,
-                transparency: 20,
-                line: { color: colors.primary, width: 2, dashType: 'dash' }
-              });
-              chartSlide.addText('📊 CHART LOADING', {
-                x: 0.7, y: 2.7, w: 4.1, h: 0.6,
-                fontSize: 18,
-                align: 'center',
-                color: colors.primary,
-                bold: true,
-                fontFace: 'Arial'
-              });
-            }
-          }
-
-          // RIGHT SIDE: Text content area (optimized for blue line layout)
-          // Header box for "DATA ANALYSIS" (smaller, integrated)
-          chartSlide.addShape(pptx.ShapeType.rect, {
-            x: 5.2, y: 0.3, w: 4.2, h: 0.6,
-            fill: colors.purple,
-            line: { width: 0 },
-            rounding: 5
-          });
-          
-          chartSlide.addText('DATA ANALYSIS', {
-            x: 5.2, y: 0.3, w: 4.2, h: 0.6,
-            fontSize: 20,
-            bold: true,
-            color: 'FFFFFF',
-            fontFace: 'Arial Black',
-            align: 'center'
-          });
-
-          // Chart title/query below header
-          chartSlide.addText(chart.query.toUpperCase(), {
-            x: 5.2, y: 1.1, w: 4.2, h: 0.5,
-            fontSize: 16,
-            bold: true,
-            color: colors.primary,
-            fontFace: 'Arial Black',
-            align: 'left'
-          });
-          
-          // Smart insights with bold formatting (RIGHT SIDE)
-          const richTextArray = [];
-          const parts = smartDescription.split('**');
-          
-          for (let j = 0; j < parts.length; j++) {
-            if (j % 2 === 0) {
-              // Regular text
-              if (parts[j]) {
-                richTextArray.push({
-                  text: parts[j],
-                  options: { fontSize: 11, color: colors.text, fontFace: 'Arial' }
-                });
-              }
-            } else {
-              // Bold text for impact
-              if (parts[j]) {
-                richTextArray.push({
-                  text: parts[j],
-                  options: { fontSize: 11, color: colors.primary, fontFace: 'Arial', bold: true }
-                });
-              }
-            }
-          }
-          
-          // Add description in RIGHT side text area (optimized for blue line layout)
-          chartSlide.addText(richTextArray, {
-            x: 5.2, y: 1.8, w: 4.2, h: 3.5,
-            align: 'left',
-            lineSpacing: 16,
-            paraSpaceAfter: 8
-          });
-          
-          // No diamonds on middle pages - clean design
-        }
-
-              // =======================
-        // FINAL SLIDE: Thank You (Matching Reference Design)
-        // =======================
-        const thankYouSlide = pptx.addSlide();
-        thankYouSlide.background = { fill: colors.background };
-        
-        // No geometric shapes on thank you slide - clean design
-        
-        // Main THANK YOU message (centered in middle of page)
-        thankYouSlide.addText('THANK', {
-          x: 1, y: 2.5, w: 8, h: 1,
-          fontSize: 80,
-          bold: true,
-          color: colors.primary,
-          align: 'center',
-          fontFace: 'Arial Black'
-        });
-        
-        thankYouSlide.addText('YOU', {
-          x: 1, y: 3.5, w: 8, h: 1,
-          fontSize: 80,
-          bold: true,
-          color: colors.primary,
-          align: 'center',
-          fontFace: 'Arial Black'
-        });
-        
-        // No diamonds on thank you slide - clean design
-
-      // Generate and download the PowerPoint file
-      const fileName = `analytics-presentation-${new Date().toISOString().split('T')[0]}.pptx`;
-      await pptx.writeFile({ fileName });
-      
-      console.log('✅ PowerPoint presentation generated successfully!');
-      
-    } catch (error) {
-      console.error('Error creating PowerPoint presentation:', error);
-      throw error;
-    }
   };
 
   const downloadDashboard = async () => {
@@ -2131,9 +1803,8 @@ const ChatPage = () => {
                                 className="h-64 overflow-auto rounded-lg bg-white border custom-scrollbar"
                                 style={{
                                   scrollbarWidth: 'thin', 
-                                  scrollbarColor: '#6B7280 #F3F6F6'
+                                  scrollbarColor: '#6B7280 #F3F4F6'
                                 }}
-                                data-chart-id={pinnedChart.id}
                               >
                                 <div ref={el => chartRefs.current[pinnedChart.id] = el}>
                                   <ReactECharts
@@ -2153,50 +1824,28 @@ const ChatPage = () => {
                           <div className="flex items-center justify-between">
                             <div className="text-blue-700">
                               <p className="font-medium">💡 Dashboard Ready!</p>
-                              <p className="text-sm">Generate PDF reports or create PowerPoint presentations with AI insights and recommendations.</p>
+                              <p className="text-sm">Click "Generate Report" to download an optimized PDF with full-size charts and clear axis labels.</p>
                             </div>
-                            <div className="flex items-center space-x-3">
-                              <button
-                                onClick={downloadDashboard}
-                                disabled={isGeneratingPDF}
-                                className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
-                                  isGeneratingPDF 
-                                    ? 'bg-gray-400 text-white cursor-not-allowed' 
-                                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                                }`}
-                              >
-                                {isGeneratingPDF ? (
-                                  <>
-                                    <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent mr-2"></div>
-                                    Generating...
-                                  </>
-                                ) : (
-                                  <>
-                                    📄 PDF Report
-                                  </>
-                                )}
-                              </button>
-                              <button
-                                onClick={generatePresentation}
-                                disabled={isGeneratingPDF}
-                                className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
-                                  isGeneratingPDF 
-                                    ? 'bg-gray-400 text-white cursor-not-allowed' 
-                                    : 'bg-purple-600 text-white hover:bg-purple-700'
-                                }`}
-                              >
-                                {isGeneratingPDF ? (
-                                  <>
-                                    <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent mr-2"></div>
-                                    Generating...
-                                  </>
-                                ) : (
-                                  <>
-                                    🎯 PowerPoint
-                                  </>
-                                )}
-                              </button>
-                            </div>
+                            <button
+                              onClick={downloadDashboard}
+                              disabled={isGeneratingPDF}
+                              className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
+                                isGeneratingPDF 
+                                  ? 'bg-gray-400 text-white cursor-not-allowed' 
+                                  : 'bg-blue-600 text-white hover:bg-blue-700'
+                              }`}
+                            >
+                              {isGeneratingPDF ? (
+                                <>
+                                  <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent mr-2"></div>
+                                  Generating...
+                                </>
+                              ) : (
+                                <>
+                                  📄 Generate Report
+                                </>
+                              )}
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -2551,7 +2200,6 @@ const ChatPage = () => {
                                 scrollbarWidth: 'thin', 
                                 scrollbarColor: '#6B7280 #F3F4F6'
                               }}
-                              data-chart-id={conversation.id}
                             >
                               <ReactECharts
                                 option={generateChartOptions(

@@ -55,7 +55,7 @@ const ChatPage = () => {
   const chartInstances = useRef({});
   const chatRecognition = useRef({});
   const interruptRecognition = useRef({}); // For detecting interruptions during AI speech
-  const url = "https://dashboard-agent-7.onrender.com";
+  const url = "http://127.0.0.1:5000";
 
   // Show loading screen while checking authentication
   if (userLoading) {
@@ -768,7 +768,7 @@ const ChatPage = () => {
       // Create PowerPoint presentation
       await createPowerPointPresentation(insights);
 
-      showNotification(`✅ Clean PowerPoint presentation generated! ${pinnedCharts.length + 2} slides with minimalist design and perfect centering.`, 'success');
+      showNotification(`✅ Professional PowerPoint presentation generated! ${pinnedCharts.length + 2} slides with comprehensive AI insights.`, 'success');
 
     } catch (error) {
       console.error('Error generating presentation:', error);
@@ -808,7 +808,56 @@ const ChatPage = () => {
         const titleSlide = pptx.addSlide();
         titleSlide.background = { fill: colors.background };
         
-        // No geometric shapes on title slide - clean design
+        // Top-left geometric pattern (matching reference)
+        titleSlide.addShape(pptx.ShapeType.rect, {
+          x: 0, y: 0, w: 0.8, h: 3,
+          fill: colors.primary,
+          line: { width: 0 },
+          rotate: 35
+        });
+        
+        titleSlide.addShape(pptx.ShapeType.rect, {
+          x: 0.3, y: 0, w: 0.6, h: 2.5,
+          fill: colors.purple,
+          line: { width: 0 },
+          rotate: 35
+        });
+        
+        titleSlide.addShape(pptx.ShapeType.rect, {
+          x: 0.8, y: 0, w: 1.2, h: 1.8,
+          fill: colors.lightBlue,
+          line: { width: 0 },
+          rotate: 35
+        });
+        
+        titleSlide.addShape(pptx.ShapeType.rect, {
+          x: 1.5, y: 0, w: 0.4, h: 1.2,
+          fill: colors.secondary,
+          line: { width: 0 },
+          rotate: 35
+        });
+        
+        // Bottom-right geometric pattern (matching reference)
+        titleSlide.addShape(pptx.ShapeType.rect, {
+          x: 8.2, y: 4, w: 2, h: 3,
+          fill: colors.primary,
+          line: { width: 0 },
+          rotate: 215
+        });
+        
+        titleSlide.addShape(pptx.ShapeType.rect, {
+          x: 8.8, y: 4.5, w: 1.5, h: 2.5,
+          fill: colors.purple,
+          line: { width: 0 },
+          rotate: 215
+        });
+        
+        titleSlide.addShape(pptx.ShapeType.rect, {
+          x: 9.2, y: 5.2, w: 1, h: 1.8,
+          fill: colors.lightBlue,
+          line: { width: 0 },
+          rotate: 215
+        });
         
         // Main title (exactly like reference)
         titleSlide.addText('ANALYTICS', {
@@ -865,10 +914,36 @@ const ChatPage = () => {
           align: 'center'
         });
         
-        // No diamonds on title slide - clean design
+        // Diamond decorative elements (exactly like reference)
+        const diamondPositions = [
+          {x: 0.8, y: 5.5}, {x: 1.1, y: 5.5}, {x: 1.4, y: 5.5}
+        ];
+        
+        diamondPositions.forEach(pos => {
+          titleSlide.addShape(pptx.ShapeType.rect, {
+            x: pos.x, y: pos.y, w: 0.12, h: 0.12,
+            fill: colors.text,
+            line: { width: 0 },
+            rotate: 45
+          });
+        });
+        
+        // Bottom right diamonds
+        const titleRightDiamonds = [
+          {x: 8.5, y: 1.5}, {x: 8.8, y: 1.5}, {x: 9.1, y: 1.5}
+        ];
+        
+        titleRightDiamonds.forEach(pos => {
+          titleSlide.addShape(pptx.ShapeType.rect, {
+            x: pos.x, y: pos.y, w: 0.12, h: 0.12,
+            fill: colors.text,
+            line: { width: 0 },
+            rotate: 45
+          });
+        });
 
               // =======================
-        // SLIDES 2+: Chart Analysis Slides (Left Chart + Right Text Layout)
+        // SLIDES 2+: Chart Analysis Slides (Matching Reference Design)
         // =======================
         for (let i = 0; i < pinnedCharts.length; i++) {
           const chart = pinnedCharts[i];
@@ -877,19 +952,59 @@ const ChatPage = () => {
           const chartSlide = pptx.addSlide();
           chartSlide.background = { fill: colors.background };
           
-          // Add simple blue lines at top and bottom (like in reference image)
-          // Top blue line
+          // Add matching geometric elements (same as title slide)
+          // Top-left geometric pattern
           chartSlide.addShape(pptx.ShapeType.rect, {
-            x: 0, y: 0, w: 10, h: 0.15,
+            x: 0, y: 0, w: 0.8, h: 3,
             fill: colors.primary,
-            line: { width: 0 }
+            line: { width: 0 },
+            rotate: 35
           });
           
-          // Bottom blue line
           chartSlide.addShape(pptx.ShapeType.rect, {
-            x: 0, y: 6.85, w: 10, h: 0.15,
+            x: 0.3, y: 0, w: 0.6, h: 2.5,
+            fill: colors.purple,
+            line: { width: 0 },
+            rotate: 35
+          });
+          
+          chartSlide.addShape(pptx.ShapeType.rect, {
+            x: 0.8, y: 0, w: 1.2, h: 1.8,
+            fill: colors.lightBlue,
+            line: { width: 0 },
+            rotate: 35
+          });
+          
+          // Bottom-right geometric pattern
+          chartSlide.addShape(pptx.ShapeType.rect, {
+            x: 8.2, y: 4, w: 2, h: 3,
             fill: colors.primary,
-            line: { width: 0 }
+            line: { width: 0 },
+            rotate: 215
+          });
+          
+          chartSlide.addShape(pptx.ShapeType.rect, {
+            x: 8.8, y: 4.5, w: 1.5, h: 2.5,
+            fill: colors.purple,
+            line: { width: 0 },
+            rotate: 215
+          });
+          
+          // Header box (like "OUR TEAM" in reference)
+          chartSlide.addShape(pptx.ShapeType.rect, {
+            x: 2.5, y: 1, w: 5, h: 0.8,
+            fill: colors.purple,
+            line: { color: colors.purple, width: 2 },
+            rounding: 5
+          });
+          
+          chartSlide.addText('DATA ANALYSIS', {
+            x: 2.5, y: 1, w: 5, h: 0.8,
+            fontSize: 32,
+            bold: true,
+            color: 'FFFFFF',
+            fontFace: 'Arial Black',
+            align: 'center'
           });
           
           // Parse data for smart descriptions
@@ -921,15 +1036,15 @@ const ChatPage = () => {
             smartDescription = `This **${chart.customization.chartType} visualization** displays **${yAxisField}** organized by **${xAxisField}**. The analysis reveals **important patterns** that provide **actionable insights** for **strategic planning** and **operational improvements**. **Key findings** demonstrate **critical trends** that guide **business decisions**.`;
           }
 
-          // LEFT SIDE: Chart area (optimized positioning with blue line header)
+          // Chart area with hexagonal-style frame (inspired by reference)
           chartSlide.addShape(pptx.ShapeType.rect, {
-            x: 0.5, y: 0.6, w: 4.5, h: 4.5,
+            x: 1.5, y: 2.5, w: 7, h: 4,
             fill: colors.background,
-            line: { color: colors.primary, width: 3 },
-            rounding: 10
+            line: { color: colors.primary, width: 4 },
+            rounding: 15
           });
 
-          // Capture and add chart image on LEFT (optimized for blue line layout)
+          // Capture and add chart image
           const chartElement = document.querySelector(`[data-chart-id="${chart.id}"]`);
           if (chartElement) {
             try {
@@ -945,20 +1060,20 @@ const ChatPage = () => {
               
               chartSlide.addImage({
                 data: chartImageData,
-                x: 0.7, y: 0.8, w: 4.1, h: 4.1,
-                rounding: 8
+                x: 1.8, y: 2.8, w: 6.4, h: 3.4,
+                rounding: 12
               });
             } catch (error) {
               console.warn('Could not capture chart image:', error);
               chartSlide.addShape(pptx.ShapeType.rect, {
-                x: 0.7, y: 0.8, w: 4.1, h: 4.1,
+                x: 1.8, y: 2.8, w: 6.4, h: 3.4,
                 fill: colors.lightBlue,
                 transparency: 20,
                 line: { color: colors.primary, width: 2, dashType: 'dash' }
               });
               chartSlide.addText('📊 CHART LOADING', {
-                x: 0.7, y: 2.7, w: 4.1, h: 0.6,
-                fontSize: 18,
+                x: 1.8, y: 4.2, w: 6.4, h: 0.6,
+                fontSize: 20,
                 align: 'center',
                 color: colors.primary,
                 bold: true,
@@ -967,35 +1082,17 @@ const ChatPage = () => {
             }
           }
 
-          // RIGHT SIDE: Text content area (optimized for blue line layout)
-          // Header box for "DATA ANALYSIS" (smaller, integrated)
-          chartSlide.addShape(pptx.ShapeType.rect, {
-            x: 5.2, y: 0.3, w: 4.2, h: 0.6,
-            fill: colors.purple,
-            line: { width: 0 },
-            rounding: 5
-          });
-          
-          chartSlide.addText('DATA ANALYSIS', {
-            x: 5.2, y: 0.3, w: 4.2, h: 0.6,
-            fontSize: 20,
-            bold: true,
-            color: 'FFFFFF',
-            fontFace: 'Arial Black',
-            align: 'center'
-          });
-
-          // Chart title/query below header
+          // Professional description below chart
           chartSlide.addText(chart.query.toUpperCase(), {
-            x: 5.2, y: 1.1, w: 4.2, h: 0.5,
-            fontSize: 16,
+            x: 1, y: 6.8, w: 8, h: 0.4,
+            fontSize: 18,
             bold: true,
             color: colors.primary,
             fontFace: 'Arial Black',
-            align: 'left'
+            align: 'center'
           });
           
-          // Smart insights with bold formatting (RIGHT SIDE)
+          // Smart insights with bold formatting
           const richTextArray = [];
           const parts = smartDescription.split('**');
           
@@ -1005,7 +1102,7 @@ const ChatPage = () => {
               if (parts[j]) {
                 richTextArray.push({
                   text: parts[j],
-                  options: { fontSize: 11, color: colors.text, fontFace: 'Arial' }
+                  options: { fontSize: 12, color: colors.text, fontFace: 'Arial' }
                 });
               }
             } else {
@@ -1013,21 +1110,46 @@ const ChatPage = () => {
               if (parts[j]) {
                 richTextArray.push({
                   text: parts[j],
-                  options: { fontSize: 11, color: colors.primary, fontFace: 'Arial', bold: true }
+                  options: { fontSize: 12, color: colors.primary, fontFace: 'Arial', bold: true }
                 });
               }
             }
           }
           
-          // Add description in RIGHT side text area (optimized for blue line layout)
+          // Add description with professional formatting
           chartSlide.addText(richTextArray, {
-            x: 5.2, y: 1.8, w: 4.2, h: 3.5,
-            align: 'left',
+            x: 0.5, y: 7.3, w: 9, h: 1.2,
+            align: 'center',
             lineSpacing: 16,
             paraSpaceAfter: 8
           });
           
-          // No diamonds on middle pages - clean design
+          // Add diamond decorative elements (matching reference)
+          const leftDiamonds = [
+            {x: 0.8, y: 6.5}, {x: 1.1, y: 6.5}, {x: 1.4, y: 6.5}
+          ];
+          
+          leftDiamonds.forEach(pos => {
+            chartSlide.addShape(pptx.ShapeType.rect, {
+              x: pos.x, y: pos.y, w: 0.12, h: 0.12,
+              fill: colors.text,
+              line: { width: 0 },
+              rotate: 45
+            });
+          });
+          
+          const chartRightDiamonds = [
+            {x: 8.5, y: 1.5}, {x: 8.8, y: 1.5}, {x: 9.1, y: 1.5}
+          ];
+          
+          chartRightDiamonds.forEach(pos => {
+            chartSlide.addShape(pptx.ShapeType.rect, {
+              x: pos.x, y: pos.y, w: 0.12, h: 0.12,
+              fill: colors.text,
+              line: { width: 0 },
+              rotate: 45
+            });
+          });
         }
 
               // =======================
@@ -1036,11 +1158,61 @@ const ChatPage = () => {
         const thankYouSlide = pptx.addSlide();
         thankYouSlide.background = { fill: colors.background };
         
-        // No geometric shapes on thank you slide - clean design
+        // Add exact geometric elements (same as title slide and chart slides)
+        // Top-left geometric pattern
+        thankYouSlide.addShape(pptx.ShapeType.rect, {
+          x: 0, y: 0, w: 0.8, h: 3,
+          fill: colors.primary,
+          line: { width: 0 },
+          rotate: 35
+        });
         
-        // Main THANK YOU message (centered in middle of page)
+        thankYouSlide.addShape(pptx.ShapeType.rect, {
+          x: 0.3, y: 0, w: 0.6, h: 2.5,
+          fill: colors.purple,
+          line: { width: 0 },
+          rotate: 35
+        });
+        
+        thankYouSlide.addShape(pptx.ShapeType.rect, {
+          x: 0.8, y: 0, w: 1.2, h: 1.8,
+          fill: colors.lightBlue,
+          line: { width: 0 },
+          rotate: 35
+        });
+        
+        thankYouSlide.addShape(pptx.ShapeType.rect, {
+          x: 1.5, y: 0, w: 0.4, h: 1.2,
+          fill: colors.secondary,
+          line: { width: 0 },
+          rotate: 35
+        });
+        
+        // Bottom-right geometric pattern
+        thankYouSlide.addShape(pptx.ShapeType.rect, {
+          x: 8.2, y: 4, w: 2, h: 3,
+          fill: colors.primary,
+          line: { width: 0 },
+          rotate: 215
+        });
+        
+        thankYouSlide.addShape(pptx.ShapeType.rect, {
+          x: 8.8, y: 4.5, w: 1.5, h: 2.5,
+          fill: colors.purple,
+          line: { width: 0 },
+          rotate: 215
+        });
+        
+        thankYouSlide.addShape(pptx.ShapeType.rect, {
+          x: 9.2, y: 5.2, w: 1, h: 1.8,
+          fill: colors.lightBlue,
+          line: { width: 0 },
+          rotate: 215
+        });
+        
+        // Main THANK YOU message (exactly like reference image)
         thankYouSlide.addText('THANK', {
-          x: 1, y: 2.5, w: 8, h: 1,
+          x: 2, y: 2.8, w: 6, h: 1,
           fontSize: 80,
           bold: true,
           color: colors.primary,
@@ -1049,7 +1221,7 @@ const ChatPage = () => {
         });
         
         thankYouSlide.addText('YOU', {
-          x: 1, y: 3.5, w: 8, h: 1,
+          x: 2, y: 3.8, w: 6, h: 1,
           fontSize: 80,
           bold: true,
           color: colors.primary,
@@ -1057,7 +1229,32 @@ const ChatPage = () => {
           fontFace: 'Arial Black'
         });
         
-        // No diamonds on thank you slide - clean design
+        // Diamond decorative elements (matching reference exactly)
+        const leftDiamonds = [
+          {x: 0.8, y: 5.8}, {x: 1.1, y: 5.8}, {x: 1.4, y: 5.8}
+        ];
+        
+        leftDiamonds.forEach(pos => {
+          thankYouSlide.addShape(pptx.ShapeType.rect, {
+            x: pos.x, y: pos.y, w: 0.12, h: 0.12,
+            fill: colors.text,
+            line: { width: 0 },
+            rotate: 45
+          });
+        });
+        
+        const thankYouRightDiamonds = [
+          {x: 8.5, y: 1.5}, {x: 8.8, y: 1.5}, {x: 9.1, y: 1.5}
+        ];
+        
+        thankYouRightDiamonds.forEach(pos => {
+          thankYouSlide.addShape(pptx.ShapeType.rect, {
+            x: pos.x, y: pos.y, w: 0.12, h: 0.12,
+            fill: colors.text,
+            line: { width: 0 },
+            rotate: 45
+          });
+        });
 
       // Generate and download the PowerPoint file
       const fileName = `analytics-presentation-${new Date().toISOString().split('T')[0]}.pptx`;

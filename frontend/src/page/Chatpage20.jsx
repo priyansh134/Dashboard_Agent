@@ -55,7 +55,8 @@ const ChatPage = () => {
   const chartInstances = useRef({});
   const chatRecognition = useRef({});
   const interruptRecognition = useRef({}); // For detecting interruptions during AI speech
-  const url = "https://dashboard-agent-7.onrender.com";
+  const url= "http://127.0.0.1:5000"
+  //const url = "https://dashboard-agent-7.onrender.com";
 
   // Show loading screen while checking authentication
   if (userLoading) {
@@ -768,7 +769,7 @@ const ChatPage = () => {
       // Create PowerPoint presentation
       await createPowerPointPresentation(insights);
 
-      showNotification(`✅ Clean PowerPoint presentation generated! ${pinnedCharts.length + 2} slides with minimalist design and perfect centering.`, 'success');
+      showNotification(`✅ PowerPoint presentation generated! ${pinnedCharts.length + 2} slides with AI insights included.`, 'success');
 
     } catch (error) {
       console.error('Error generating presentation:', error);
@@ -780,7 +781,7 @@ const ChatPage = () => {
 
   const createPowerPointPresentation = async (insights) => {
     try {
-      // Create new PowerPoint presentation with professional theme
+      // Create new PowerPoint presentation
       const pptx = new PptxGenJS();
       
       // Set presentation properties
@@ -788,276 +789,270 @@ const ChatPage = () => {
       pptx.company = 'Data Analytics Team';
       pptx.subject = 'Chart Analysis & Insights';
       pptx.title = 'Analytics Dashboard Presentation';
+
+      // =======================
+      // SLIDE 1: Title Slide
+      // =======================
+      const titleSlide = pptx.addSlide();
       
-              // Define exact color scheme matching the reference design
-        const colors = {
-          primary: '1A5490',     // Deep blue (matching reference)
-          secondary: '3B82F6',   // Bright blue  
-          accent: '8B5CF6',      // Purple accent
-          purple: '6D28D9',      // Deep purple (matching reference)
-          lightBlue: '60A5FA',   // Light blue for geometry
-          lightPurple: 'A78BFA', // Light purple for geometry
-          text: '1F2937',        // Dark text
-          background: 'FFFFFF',  // White background
-          grayText: '6B7280'     // Gray text for subtitles
-        };
+      // Set gradient background
+      titleSlide.background = { fill: 'F1F5F9' };
+      
+      // Add title
+      titleSlide.addText('📊 Analytics Dashboard Presentation', {
+        x: 0.5, y: 1.5, w: 9, h: 1.5,
+        fontSize: 36,
+        bold: true,
+        color: '1F2937',
+        align: 'center'
+      });
+      
+      // Add subtitle
+      titleSlide.addText('Data Insights & AI-Powered Recommendations', {
+        x: 0.5, y: 3, w: 9, h: 1,
+        fontSize: 20,
+        color: '4B5563',
+        align: 'center'
+      });
+      
+      // Add metadata
+      const currentDate = new Date().toLocaleDateString();
+      titleSlide.addText(`Generated on ${currentDate}`, {
+        x: 0.5, y: 4.5, w: 9, h: 0.5,
+        fontSize: 14,
+        color: '6B7280',
+        align: 'center'
+      });
+      
+      titleSlide.addText(`${pinnedCharts.length} Key Charts Analyzed`, {
+        x: 0.5, y: 5, w: 9, h: 0.5,
+        fontSize: 14,
+        color: '6B7280',
+        align: 'center'
+      });
 
-              // =======================
-        // SLIDE 1: Title Slide (Matching Reference Design)
-        // =======================
-        const titleSlide = pptx.addSlide();
-        titleSlide.background = { fill: colors.background };
+      // =======================
+      // SLIDES 2+: Chart Slides
+      // =======================
+      for (let i = 0; i < pinnedCharts.length; i++) {
+        const chart = pinnedCharts[i];
+        const insight = insights.find(ins => ins.chart_id === chart.id);
         
-        // No geometric shapes on title slide - clean design
+        const chartSlide = pptx.addSlide();
+        chartSlide.background = { fill: 'FFFFFF' };
         
-        // Main title (exactly like reference)
-        titleSlide.addText('ANALYTICS', {
-          x: 0.8, y: 2.2, w: 6, h: 0.8,
-          fontSize: 64,
-          bold: true,
-          color: colors.primary,
-          align: 'left',
-          fontFace: 'Arial Black'
-        });
-        
-        titleSlide.addText('PROJECT', {
-          x: 0.8, y: 3, w: 6, h: 0.8,
-          fontSize: 64,
-          bold: true,
-          color: colors.primary,
-          align: 'left',
-          fontFace: 'Arial Black'
-        });
-        
-        // Subtitle (matching reference style)
-        titleSlide.addText('PRESENTED BY DATA INSIGHTS TEAM', {
-          x: 0.8, y: 4.2, w: 6, h: 0.4,
-          fontSize: 16,
-          color: colors.secondary,
-          align: 'left',
-          fontFace: 'Arial'
-        });
-        
-        // Add chart visualization frames (replacing building images)
-        titleSlide.addShape(pptx.ShapeType.rect, {
-          x: 6.8, y: 2.3, w: 2.8, h: 1.8,
-          fill: colors.background,
-          line: { color: colors.primary, width: 3 },
-          rotate: 15
-        });
-        
-        titleSlide.addText('📊', {
-          x: 7.3, y: 2.9, w: 1.8, h: 0.6,
-          fontSize: 32,
-          align: 'center'
-        });
-        
-        titleSlide.addShape(pptx.ShapeType.rect, {
-          x: 5.8, y: 3.5, w: 2.2, h: 1.4,
-          fill: colors.background,
-          line: { color: colors.purple, width: 3 },
-          rotate: -10
-        });
-        
-        titleSlide.addText('📈', {
-          x: 6.2, y: 3.9, w: 1.4, h: 0.6,
+        // Parse AI insights
+        const insightText = insight?.insight || '';
+        const titleMatch = insightText.match(/TITLE: (.+)/);
+        const insightsMatch = insightText.match(/INSIGHTS:\s*([\s\S]*?)(?=RECOMMENDATION:|$)/);
+        const recommendationMatch = insightText.match(/RECOMMENDATION: (.+)/);
+        const patternMatch = insightText.match(/PATTERN: (.+)/);
+
+        const slideTitle = titleMatch ? titleMatch[1] : chart.query;
+        const insights_list = insightsMatch ? insightsMatch[1].trim().split('\n').filter(line => line.trim()) : ['Key data visualization'];
+        const recommendation = recommendationMatch ? recommendationMatch[1] : 'Continue monitoring trends';
+        const pattern = patternMatch ? patternMatch[1] : 'Standard data pattern observed';
+
+        // Add slide title
+        chartSlide.addText(`📈 ${slideTitle}`, {
+          x: 0.5, y: 0.3, w: 8, h: 0.8,
           fontSize: 24,
-          align: 'center'
+          bold: true,
+          color: '1F2937'
         });
         
-        // No diamonds on title slide - clean design
+        // Add slide number
+        chartSlide.addText(`Slide ${i + 2}`, {
+          x: 8.5, y: 0.3, w: 1, h: 0.5,
+          fontSize: 12,
+          color: 'FFFFFF',
+          fill: '667EEA',
+          align: 'center'
+        });
 
-              // =======================
-        // SLIDES 2+: Chart Analysis Slides (Left Chart + Right Text Layout)
-        // =======================
-        for (let i = 0; i < pinnedCharts.length; i++) {
-          const chart = pinnedCharts[i];
-          const insight = insights.find(ins => ins.chart_id === chart.id);
-          
-          const chartSlide = pptx.addSlide();
-          chartSlide.background = { fill: colors.background };
-          
-          // Add simple blue lines at top and bottom (like in reference image)
-          // Top blue line
-          chartSlide.addShape(pptx.ShapeType.rect, {
-            x: 0, y: 0, w: 10, h: 0.15,
-            fill: colors.primary,
-            line: { width: 0 }
-          });
-          
-          // Bottom blue line
-          chartSlide.addShape(pptx.ShapeType.rect, {
-            x: 0, y: 6.85, w: 10, h: 0.15,
-            fill: colors.primary,
-            line: { width: 0 }
-          });
-          
-          // Parse data for smart descriptions
-          const headers = chart.data[0] || [];
-          const xAxisField = headers[chart.customization.xAxis] || 'Category';
-          const yAxisField = headers[chart.customization.yAxis] || 'Value';
-          
-          // Get specific data examples
-          const sampleData = chart.data.slice(1, 4); // First 3 data rows
-          let smartDescription = '';
-          
-          if (sampleData.length > 0) {
-            const examples = sampleData.map(row => {
-              const xValue = row[chart.customization.xAxis];
-              const yValue = row[chart.customization.yAxis];
-              if (yAxisField.toLowerCase().includes('salary')) {
-                return `**Employee ID ${xValue}** has a **salary of ${yValue}**`;
-              } else if (yAxisField.toLowerCase().includes('sales')) {
-                return `**${xAxisField} ${xValue}** achieved **sales of ${yValue}**`;
-              } else if (yAxisField.toLowerCase().includes('revenue')) {
-                return `**${xAxisField} ${xValue}** generated **revenue of ${yValue}**`;
-              } else {
-                return `**${xAxisField} ${xValue}** shows **${yAxisField} of ${yValue}**`;
-              }
+        // Capture chart image
+        const chartElement = document.querySelector(`[data-chart-id="${chart.id}"]`);
+        if (chartElement) {
+          try {
+            const canvas = await html2canvas(chartElement, {
+              backgroundColor: '#ffffff',
+              scale: 2,
+              logging: false,
+              useCORS: true
             });
+            const chartImageData = canvas.toDataURL('image/png');
             
-            smartDescription = `This **${chart.customization.chartType} chart** reveals crucial insights about **${yAxisField}** across different **${xAxisField}** values. Our analysis shows: ${examples[0]}${examples[1] ? `, ${examples[1]}` : ''}${examples[2] ? `, and ${examples[2]}` : ''}. These **data patterns** indicate **significant trends** that require **strategic attention** and can drive **informed decision-making** for improved **business performance**.`;
-          } else {
-            smartDescription = `This **${chart.customization.chartType} visualization** displays **${yAxisField}** organized by **${xAxisField}**. The analysis reveals **important patterns** that provide **actionable insights** for **strategic planning** and **operational improvements**. **Key findings** demonstrate **critical trends** that guide **business decisions**.`;
+            // Add chart image to left side
+            chartSlide.addImage({
+              data: chartImageData,
+              x: 0.5, y: 1.5, w: 4.5, h: 4,
+              rounding: true
+            });
+          } catch (error) {
+            console.warn('Could not capture chart image:', error);
+            // Add placeholder if image capture fails
+            chartSlide.addText('📊 Chart Visualization', {
+              x: 0.5, y: 3, w: 4.5, h: 1,
+              fontSize: 16,
+              align: 'center',
+              fill: 'F3F4F6',
+              color: '6B7280'
+            });
           }
-
-          // LEFT SIDE: Chart area (optimized positioning with blue line header)
-          chartSlide.addShape(pptx.ShapeType.rect, {
-            x: 0.5, y: 0.6, w: 4.5, h: 4.5,
-            fill: colors.background,
-            line: { color: colors.primary, width: 3 },
-            rounding: 10
-          });
-
-          // Capture and add chart image on LEFT (optimized for blue line layout)
-          const chartElement = document.querySelector(`[data-chart-id="${chart.id}"]`);
-          if (chartElement) {
-            try {
-              const canvas = await html2canvas(chartElement, {
-                backgroundColor: '#ffffff',
-                scale: 3,
-                logging: false,
-                useCORS: true,
-                width: chartElement.offsetWidth,
-                height: chartElement.offsetHeight
-              });
-              const chartImageData = canvas.toDataURL('image/png');
-              
-              chartSlide.addImage({
-                data: chartImageData,
-                x: 0.7, y: 0.8, w: 4.1, h: 4.1,
-                rounding: 8
-              });
-            } catch (error) {
-              console.warn('Could not capture chart image:', error);
-              chartSlide.addShape(pptx.ShapeType.rect, {
-                x: 0.7, y: 0.8, w: 4.1, h: 4.1,
-                fill: colors.lightBlue,
-                transparency: 20,
-                line: { color: colors.primary, width: 2, dashType: 'dash' }
-              });
-              chartSlide.addText('📊 CHART LOADING', {
-                x: 0.7, y: 2.7, w: 4.1, h: 0.6,
-                fontSize: 18,
-                align: 'center',
-                color: colors.primary,
-                bold: true,
-                fontFace: 'Arial'
-              });
-            }
-          }
-
-          // RIGHT SIDE: Text content area (optimized for blue line layout)
-          // Header box for "DATA ANALYSIS" (smaller, integrated)
-          chartSlide.addShape(pptx.ShapeType.rect, {
-            x: 5.2, y: 0.3, w: 4.2, h: 0.6,
-            fill: colors.purple,
-            line: { width: 0 },
-            rounding: 5
-          });
-          
-          chartSlide.addText('DATA ANALYSIS', {
-            x: 5.2, y: 0.3, w: 4.2, h: 0.6,
-            fontSize: 20,
-            bold: true,
-            color: 'FFFFFF',
-            fontFace: 'Arial Black',
-            align: 'center'
-          });
-
-          // Chart title/query below header
-          chartSlide.addText(chart.query.toUpperCase(), {
-            x: 5.2, y: 1.1, w: 4.2, h: 0.5,
-            fontSize: 16,
-            bold: true,
-            color: colors.primary,
-            fontFace: 'Arial Black',
-            align: 'left'
-          });
-          
-          // Smart insights with bold formatting (RIGHT SIDE)
-          const richTextArray = [];
-          const parts = smartDescription.split('**');
-          
-          for (let j = 0; j < parts.length; j++) {
-            if (j % 2 === 0) {
-              // Regular text
-              if (parts[j]) {
-                richTextArray.push({
-                  text: parts[j],
-                  options: { fontSize: 11, color: colors.text, fontFace: 'Arial' }
-                });
-              }
-            } else {
-              // Bold text for impact
-              if (parts[j]) {
-                richTextArray.push({
-                  text: parts[j],
-                  options: { fontSize: 11, color: colors.primary, fontFace: 'Arial', bold: true }
-                });
-              }
-            }
-          }
-          
-          // Add description in RIGHT side text area (optimized for blue line layout)
-          chartSlide.addText(richTextArray, {
-            x: 5.2, y: 1.8, w: 4.2, h: 3.5,
-            align: 'left',
-            lineSpacing: 16,
-            paraSpaceAfter: 8
-          });
-          
-          // No diamonds on middle pages - clean design
         }
 
-              // =======================
-        // FINAL SLIDE: Thank You (Matching Reference Design)
-        // =======================
-        const thankYouSlide = pptx.addSlide();
-        thankYouSlide.background = { fill: colors.background };
+        // Right side: Insights content
+        let yPos = 1.5;
         
-        // No geometric shapes on thank you slide - clean design
-        
-        // Main THANK YOU message (centered in middle of page)
-        thankYouSlide.addText('THANK', {
-          x: 1, y: 2.5, w: 8, h: 1,
-          fontSize: 80,
+        // Key Insights section
+        chartSlide.addText('🔍 Key Insights', {
+          x: 5.2, y: yPos, w: 4, h: 0.5,
+          fontSize: 16,
           bold: true,
-          color: colors.primary,
-          align: 'center',
-          fontFace: 'Arial Black'
+          color: '667EEA'
+        });
+        yPos += 0.6;
+        
+        // Add insight bullet points
+        insights_list.slice(0, 3).forEach((insight_item, idx) => {
+          const cleanInsight = insight_item.replace('•', '').trim();
+          if (cleanInsight) {
+            chartSlide.addText(`• ${cleanInsight}`, {
+              x: 5.4, y: yPos, w: 3.8, h: 0.4,
+              fontSize: 11,
+              color: '374151'
+            });
+            yPos += 0.5;
+          }
         });
         
-        thankYouSlide.addText('YOU', {
-          x: 1, y: 3.5, w: 8, h: 1,
-          fontSize: 80,
-          bold: true,
-          color: colors.primary,
-          align: 'center',
-          fontFace: 'Arial Black'
-        });
+        yPos += 0.3;
         
-        // No diamonds on thank you slide - clean design
+        // Recommendation section
+        chartSlide.addText('💡 Recommendation', {
+          x: 5.2, y: yPos, w: 4, h: 0.5,
+          fontSize: 16,
+          bold: true,
+          color: '059669'
+        });
+        yPos += 0.6;
+        
+        chartSlide.addText(recommendation, {
+          x: 5.4, y: yPos, w: 3.8, h: 0.8,
+          fontSize: 11,
+          color: '374151'
+        });
+        yPos += 1;
+        
+        // Pattern Analysis section
+        chartSlide.addText('📊 Pattern Analysis', {
+          x: 5.2, y: yPos, w: 4, h: 0.5,
+          fontSize: 16,
+          bold: true,
+          color: 'DC2626'
+        });
+        yPos += 0.6;
+        
+        chartSlide.addText(pattern, {
+          x: 5.4, y: yPos, w: 3.8, h: 0.8,
+          fontSize: 11,
+          color: '374151'
+        });
+        yPos += 1;
+        
+        // Metadata footer
+        const metadata = `Query: ${chart.query} | Type: ${chart.customization.chartType} | Data Points: ${chart.data.length}`;
+        chartSlide.addText(metadata, {
+          x: 0.5, y: 6.5, w: 9, h: 0.5,
+          fontSize: 9,
+          color: '9CA3AF',
+          align: 'center'
+        });
+      }
+
+      // =======================
+      // FINAL SLIDE: Summary
+      // =======================
+      const summarySlide = pptx.addSlide();
+      summarySlide.background = { fill: 'F0FDF4' };
+      
+      // Summary title
+      summarySlide.addText('📋 Presentation Summary', {
+        x: 0.5, y: 0.5, w: 9, h: 1,
+        fontSize: 28,
+        bold: true,
+        color: '166534',
+        align: 'center'
+      });
+      
+      // Summary stats
+      const totalDataPoints = pinnedCharts.reduce((sum, chart) => sum + chart.data.length, 0);
+      const chartTypes = [...new Set(pinnedCharts.map(c => c.customization.chartType))];
+      
+      // Stats grid
+      summarySlide.addText('📊 Charts Analyzed', {
+        x: 1, y: 2, w: 2.5, h: 0.5,
+        fontSize: 14,
+        bold: true,
+        color: '166534'
+      });
+      summarySlide.addText(pinnedCharts.length.toString(), {
+        x: 1, y: 2.5, w: 2.5, h: 0.8,
+        fontSize: 36,
+        bold: true,
+        color: '059669',
+        align: 'center'
+      });
+      
+      summarySlide.addText('📈 Total Data Points', {
+        x: 3.8, y: 2, w: 2.5, h: 0.5,
+        fontSize: 14,
+        bold: true,
+        color: '166534'
+      });
+      summarySlide.addText(totalDataPoints.toString(), {
+        x: 3.8, y: 2.5, w: 2.5, h: 0.8,
+        fontSize: 36,
+        bold: true,
+        color: '059669',
+        align: 'center'
+      });
+      
+      summarySlide.addText('🎯 Chart Types', {
+        x: 6.5, y: 2, w: 2.5, h: 0.5,
+        fontSize: 14,
+        bold: true,
+        color: '166534'
+      });
+      summarySlide.addText(chartTypes.join(', '), {
+        x: 6.5, y: 2.5, w: 2.5, h: 0.8,
+        fontSize: 12,
+        color: '059669',
+        align: 'center'
+      });
+      
+      // Next steps
+      summarySlide.addText('🚀 Next Steps', {
+        x: 1, y: 4.5, w: 8, h: 0.5,
+        fontSize: 18,
+        bold: true,
+        color: '166534'
+      });
+      
+      const nextSteps = [
+        '• Review each chart\'s recommendations and implement improvements',
+        '• Monitor data trends over time for actionable insights',
+        '• Schedule regular data reviews with your team',
+        '• Consider automated reporting for continuous insights'
+      ];
+      
+      nextSteps.forEach((step, idx) => {
+        summarySlide.addText(step, {
+          x: 1.5, y: 5.2 + (idx * 0.4), w: 7, h: 0.3,
+          fontSize: 12,
+          color: '374151'
+        });
+      });
 
       // Generate and download the PowerPoint file
       const fileName = `analytics-presentation-${new Date().toISOString().split('T')[0]}.pptx`;

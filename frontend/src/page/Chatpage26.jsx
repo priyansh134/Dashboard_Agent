@@ -55,7 +55,7 @@ const ChatPage = () => {
   const chartInstances = useRef({});
   const chatRecognition = useRef({});
   const interruptRecognition = useRef({}); // For detecting interruptions during AI speech
-  const url = "https://dashboard-agent-7.onrender.com";
+  const url = "http://127.0.0.1:5000";
 
   // Show loading screen while checking authentication
   if (userLoading) {
@@ -768,7 +768,7 @@ const ChatPage = () => {
       // Create PowerPoint presentation
       await createPowerPointPresentation(insights);
 
-      showNotification(`✅ Clean PowerPoint presentation generated! ${pinnedCharts.length + 2} slides with minimalist design and perfect centering.`, 'success');
+      showNotification(`✅ Perfect PowerPoint presentation generated! ${pinnedCharts.length + 2} slides with optimized layout and boundaries.`, 'success');
 
     } catch (error) {
       console.error('Error generating presentation:', error);
@@ -808,7 +808,36 @@ const ChatPage = () => {
         const titleSlide = pptx.addSlide();
         titleSlide.background = { fill: colors.background };
         
-        // No geometric shapes on title slide - clean design
+        // Top-left small geometric elements (much smaller, well within boundaries)
+        titleSlide.addShape(pptx.ShapeType.rect, {
+          x: 0.5, y: 0.3, w: 0.3, h: 1.2,
+          fill: colors.primary,
+          line: { width: 0 },
+          rotate: 35
+        });
+        
+        titleSlide.addShape(pptx.ShapeType.rect, {
+          x: 0.6, y: 0.3, w: 0.25, h: 1,
+          fill: colors.purple,
+          line: { width: 0 },
+          rotate: 35
+        });
+        
+        titleSlide.addShape(pptx.ShapeType.rect, {
+          x: 0.8, y: 0.3, w: 0.4, h: 0.8,
+          fill: colors.lightBlue,
+          line: { width: 0 },
+          rotate: 35
+        });
+        
+        titleSlide.addShape(pptx.ShapeType.rect, {
+          x: 1, y: 0.3, w: 0.2, h: 0.6,
+          fill: colors.secondary,
+          line: { width: 0 },
+          rotate: 35
+        });
+        
+        // No bottom geometric elements on title slide - only upper elements
         
         // Main title (exactly like reference)
         titleSlide.addText('ANALYTICS', {
@@ -865,7 +894,33 @@ const ChatPage = () => {
           align: 'center'
         });
         
-        // No diamonds on title slide - clean design
+        // Diamond decorative elements (only upper - left and right top)
+        const upperLeftDiamonds = [
+          {x: 0.8, y: 2}, {x: 1.1, y: 2}, {x: 1.4, y: 2}
+        ];
+        
+        upperLeftDiamonds.forEach(pos => {
+          titleSlide.addShape(pptx.ShapeType.rect, {
+            x: pos.x, y: pos.y, w: 0.12, h: 0.12,
+            fill: colors.text,
+            line: { width: 0 },
+            rotate: 45
+          });
+        });
+        
+        // Upper right diamonds
+        const titleRightDiamonds = [
+          {x: 8.5, y: 1.5}, {x: 8.8, y: 1.5}, {x: 9.1, y: 1.5}
+        ];
+        
+        titleRightDiamonds.forEach(pos => {
+          titleSlide.addShape(pptx.ShapeType.rect, {
+            x: pos.x, y: pos.y, w: 0.12, h: 0.12,
+            fill: colors.text,
+            line: { width: 0 },
+            rotate: 45
+          });
+        });
 
               // =======================
         // SLIDES 2+: Chart Analysis Slides (Left Chart + Right Text Layout)
@@ -1036,11 +1091,41 @@ const ChatPage = () => {
         const thankYouSlide = pptx.addSlide();
         thankYouSlide.background = { fill: colors.background };
         
-        // No geometric shapes on thank you slide - clean design
+        // Add very small geometric elements (well within slide boundaries)
+        // Top-left tiny geometric elements
+        thankYouSlide.addShape(pptx.ShapeType.rect, {
+          x: 0.5, y: 0.3, w: 0.3, h: 1.2,
+          fill: colors.primary,
+          line: { width: 0 },
+          rotate: 35
+        });
         
-        // Main THANK YOU message (centered in middle of page)
+        thankYouSlide.addShape(pptx.ShapeType.rect, {
+          x: 0.6, y: 0.3, w: 0.25, h: 1,
+          fill: colors.purple,
+          line: { width: 0 },
+          rotate: 35
+        });
+        
+        thankYouSlide.addShape(pptx.ShapeType.rect, {
+          x: 0.8, y: 0.3, w: 0.4, h: 0.8,
+          fill: colors.lightBlue,
+          line: { width: 0 },
+          rotate: 35
+        });
+        
+        thankYouSlide.addShape(pptx.ShapeType.rect, {
+          x: 1, y: 0.3, w: 0.2, h: 0.6,
+          fill: colors.secondary,
+          line: { width: 0 },
+          rotate: 35
+        });
+        
+        // No bottom geometric elements on thank you slide - only upper elements
+        
+        // Main THANK YOU message (exactly like reference image)
         thankYouSlide.addText('THANK', {
-          x: 1, y: 2.5, w: 8, h: 1,
+          x: 2, y: 2.8, w: 6, h: 1,
           fontSize: 80,
           bold: true,
           color: colors.primary,
@@ -1049,7 +1134,7 @@ const ChatPage = () => {
         });
         
         thankYouSlide.addText('YOU', {
-          x: 1, y: 3.5, w: 8, h: 1,
+          x: 2, y: 3.8, w: 6, h: 1,
           fontSize: 80,
           bold: true,
           color: colors.primary,
@@ -1057,7 +1142,32 @@ const ChatPage = () => {
           fontFace: 'Arial Black'
         });
         
-        // No diamonds on thank you slide - clean design
+        // Diamond decorative elements (only upper - left and right top)
+        const thankYouUpperLeftDiamonds = [
+          {x: 0.8, y: 2}, {x: 1.1, y: 2}, {x: 1.4, y: 2}
+        ];
+        
+        thankYouUpperLeftDiamonds.forEach(pos => {
+          thankYouSlide.addShape(pptx.ShapeType.rect, {
+            x: pos.x, y: pos.y, w: 0.12, h: 0.12,
+            fill: colors.text,
+            line: { width: 0 },
+            rotate: 45
+          });
+        });
+        
+        const thankYouRightDiamonds = [
+          {x: 8.5, y: 1.5}, {x: 8.8, y: 1.5}, {x: 9.1, y: 1.5}
+        ];
+        
+        thankYouRightDiamonds.forEach(pos => {
+          thankYouSlide.addShape(pptx.ShapeType.rect, {
+            x: pos.x, y: pos.y, w: 0.12, h: 0.12,
+            fill: colors.text,
+            line: { width: 0 },
+            rotate: 45
+          });
+        });
 
       // Generate and download the PowerPoint file
       const fileName = `analytics-presentation-${new Date().toISOString().split('T')[0]}.pptx`;
